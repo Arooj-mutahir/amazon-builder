@@ -1,0 +1,11 @@
+services:
+  amazon-scraper:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      # Optional — only needed for country=JP / country=AU (a proxy in that
+      # country) or very high volumes.
+      # - AMAZON_PROXY=http://user:pass@host:port
