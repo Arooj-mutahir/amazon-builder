@@ -11,9 +11,6 @@ from .media import _upload_media_and_get_id, _attach_variant_images
 # ============================================
 # CREATE SINGLE VARIANT PRODUCT
 # ============================================
-# ============================================
-# CREATE SINGLE VARIANT PRODUCT
-# ============================================
 async def create_shopify_product(shop: str, access_token: str, product_data: dict) -> dict:
     print(f'🛠️  Creating Single-Variant Product: {product_data.get("title")}', flush=True)
     
@@ -281,6 +278,23 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         product_id = product_obj.get('id')
 
         if product_id:
+            # ✅ 1. Images upload karein (multi-variant)
+            if gallery_urls:
+                print(f"🖼️  Uploading {len(gallery_urls)} images...", flush=True)
+                media_mutation = """
+                mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+                  productCreateMedia(productId: $productId, media: $media) {
+                    media { id ... on MediaImage { image { url } } }
+                    userErrors { field message }
+                  }
+                }
+                """
+                media_payload = [{"originalSource": url, "mediaContentType": "IMAGE"} for url in gallery_urls]
+                await shopify_graphql(shop, access_token, media_mutation, {
+                    "productId": product_id,
+                    "media": media_payload
+                })
+
             # ✅ Pehle default variant ko update karein
             get_variants_query = """
             query getProductVariants($id: ID!) {
@@ -325,23 +339,11 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                         "optionValues": first_option_values,
                     }]
                 })
-                
-                # ✅ Pehle variant ki inventory set karein (error handling ke sath)
-                try:
-                    first_stock = int(first_v_raw.get("stock_qty") or parent_stock_qty or 0)
-                    if first_variant_inv_id:
-                        await _set_inventory_quantities(shop, access_token, [{
-                            "inventoryItemId": first_variant_inv_id,
-                            "locationId": location_id,
-                            "quantity": first_stock
-                        }])
-                except Exception as e:
-                    print(f"⚠️ Inventory set failed (First Variant): {e}", flush=True)
 
-            # ✅ Ab baqi variants (index 1 se aage) create karein
+            # ✅ Ab baqi variants create karein
             shopify_variants = []
             for idx, v_raw in enumerate(variants_raw):
-                if idx == 0:  # Pehla variant pehle hi update ho chuka hai
+                if idx == 0:
                     continue
                 entry = per_variant_options[idx]
                 price = float(v_raw.get("price", 0.0) or 0.0)
@@ -374,16 +376,6 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     "variants": shopify_variants
                 })
                 
-                if 'errors' in var_result:
-                    print(f"❌ Variants GraphQL Error: {var_result['errors']}", flush=True)
-                    return {"errors": var_result['errors']}
-
-                var_user_errors = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("userErrors", [])
-                if var_user_errors:
-                    print(f"❌ Variants User Errors: {var_user_errors}", flush=True)
-                    return {"errors": var_user_errors}
-
-                # ✅ Inventory set karein
                 created_variants = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("productVariants", [])
                 stock_updates = []
                 for cv in created_variants:
