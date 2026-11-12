@@ -63,7 +63,7 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
         product_id = product_obj.get("id")
         
         if product_id:
-            # ✅ 1. Images upload karein (product create hone ke baad)
+            # ✅ 1. Images upload karein
             valid_images = []
             for img in product_data.get('images', []):
                 if img and isinstance(img, str):
@@ -131,7 +131,7 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                     }]
                 })
 
-                # ✅ Product ki actual location fetch karein (inventoryItem se)
+                # ✅ Actual location fetch karein
                 inv_loc_query = """
                 query getInventoryItemLocations($id: ID!) {
                   inventoryItem(id: $id) {
@@ -149,9 +149,9 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                     actual_location_id = inv_levels[0]["location"]["id"]
                     print(f"📍 Product actual location: {inv_levels[0]['location']['name']} ({actual_location_id})", flush=True)
                 else:
-                    print(f"⚠️ No inventory levels found for this item. Using fallback location: {location_id}", flush=True)
+                    print(f"⚠️ No inventory levels found. Using fallback: {location_id}", flush=True)
 
-                # ✅ Ab us actual location par stock set karein
+                # ✅ Stock set karein
                 try:
                     if first_variant_inv_id and actual_location_id:
                         await _set_inventory_quantities(shop, access_token, [{
@@ -278,7 +278,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         product_id = product_obj.get('id')
 
         if product_id:
-            # ✅ 1. Images upload karein (multi-variant)
+            # ✅ 1. Images upload karein
             if gallery_urls:
                 print(f"🖼️  Uploading {len(gallery_urls)} images...", flush=True)
                 media_mutation = """
@@ -295,7 +295,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     "media": media_payload
                 })
 
-            # ✅ Pehle default variant ko update karein
+            # ✅ 2. Pehle default variant ko update karein
             get_variants_query = """
             query getProductVariants($id: ID!) {
               product(id: $id) {
@@ -340,7 +340,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     }]
                 })
 
-            # ✅ Ab baqi variants create karein
+            # ✅ 3. Baqi variants create karein
             shopify_variants = []
             for idx, v_raw in enumerate(variants_raw):
                 if idx == 0:
@@ -395,6 +395,22 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                         await _set_inventory_quantities(shop, access_token, stock_updates)
                 except Exception as e:
                     print(f"⚠️ Inventory set failed (Rest Variants): {e}", flush=True)
+
+            # ✅ 4. Images ko variants ke sath attach karein
+            media_query = """
+            query getProductMedia($id: ID!) {
+              product(id: $id) {
+                media(first: 250) { nodes { id ... on MediaImage { image { url } } } }
+                variants(first: 100) { nodes { id sku } }
+              }
+            }
+            """
+            media_result = await shopify_graphql(shop, access_token, media_query, {"id": product_id})
+            refreshed_product = (media_result.get("data") or {}).get("product") or {}
+            fresh_media = (refreshed_product.get("media") or {}).get("nodes") or []
+            fresh_variants = (refreshed_product.get("variants") or {}).get("nodes") or []
+
+            await _attach_variant_images(shop, access_token, product_id, fresh_media, fresh_variants, per_variant_options, gallery_urls)
 
             await publish_product(shop, access_token, product_id)
 
