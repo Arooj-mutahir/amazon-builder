@@ -15,6 +15,7 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
         print(f"❌ Shopify GraphQL Error: {result.get('errors')}", flush=True)
         return
 
+    # ✅ productCreate se product ID nikaalein
     user_errors = result.get("data", {}).get("productCreate", {}).get("userErrors", [])
     if user_errors:
         print(f"❌ Product Creation User Errors: {user_errors}", flush=True)

@@ -22,7 +22,7 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
         create_mutation = """
         mutation productCreate($input: ProductInput!) {
           productCreate(input: $input) {
-            product { id title handle }
+            product { id title handle }  # ✅ ID return karein
             userErrors { field message }
           }
         }
@@ -106,13 +106,16 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                     }]
                 })
 
-                # Inventory set karein
-                if first_variant_inv_id:
-                    await _set_inventory_quantities(shop, access_token, [{
-                        "inventoryItemId": first_variant_inv_id,
-                        "locationId": location_id,
-                        "quantity": int(stock_qty)
-                    }])
+                # ✅ Inventory set karein (error handling ke sath)
+                try:
+                    if first_variant_inv_id:
+                        await _set_inventory_quantities(shop, access_token, [{
+                            "inventoryItemId": first_variant_inv_id,
+                            "locationId": location_id,
+                            "quantity": int(stock_qty)
+                        }])
+                except Exception as e:
+                    print(f"⚠️ Inventory set failed (Single): {e}", flush=True)
 
             await publish_product(shop, access_token, product_id)
             
@@ -275,13 +278,17 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     }]
                 })
                 
-                first_stock = int(first_v_raw.get("stock_qty") or parent_stock_qty or 0)
-                if first_variant_inv_id:
-                    await _set_inventory_quantities(shop, access_token, [{
-                        "inventoryItemId": first_variant_inv_id,
-                        "locationId": location_id,
-                        "quantity": first_stock
-                    }])
+                # ✅ Pehle variant ki inventory set karein (error handling ke sath)
+                try:
+                    first_stock = int(first_v_raw.get("stock_qty") or parent_stock_qty or 0)
+                    if first_variant_inv_id:
+                        await _set_inventory_quantities(shop, access_token, [{
+                            "inventoryItemId": first_variant_inv_id,
+                            "locationId": location_id,
+                            "quantity": first_stock
+                        }])
+                except Exception as e:
+                    print(f"⚠️ Inventory set failed (First Variant): {e}", flush=True)
 
             # ✅ Ab baqi variants (index 1 se aage) create karein
             shopify_variants = []
@@ -343,8 +350,11 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                             stock_updates.append({"inventoryItemId": inv_id, "locationId": location_id, "quantity": variant_stock})
                             break
                 
-                if stock_updates:
-                    await _set_inventory_quantities(shop, access_token, stock_updates)
+                try:
+                    if stock_updates:
+                        await _set_inventory_quantities(shop, access_token, stock_updates)
+                except Exception as e:
+                    print(f"⚠️ Inventory set failed (Rest Variants): {e}", flush=True)
 
             await publish_product(shop, access_token, product_id)
 
