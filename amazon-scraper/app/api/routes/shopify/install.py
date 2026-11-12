@@ -14,7 +14,7 @@ def shopify_install(shop: str = Query(...)):
 
 @router.get("/callback")
 async def shopify_callback(request: Request, shop: str = Query(...), code: str = Query(...), hmac: str = Query(None), db: Session = Depends(get_db)):
-    # Ye function ab sahi token fetch karega
+    # Token fetch karein
     token_data = await exchange_code_for_token(shop, code)
     if not token_data or not token_data.get("access_token"):
         return HTMLResponse(content="<h1>❌ Failed to get access token</h1>", status_code=400)
@@ -25,6 +25,7 @@ async def shopify_callback(request: Request, shop: str = Query(...), code: str =
     refresh_expires_in = token_data.get("refresh_token_expires_in")
     now = datetime.now(timezone.utc)
 
+    # Database mein save ya update karein
     existing = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
     if existing:
         existing.access_token = access_token
@@ -39,4 +40,6 @@ async def shopify_callback(request: Request, shop: str = Query(...), code: str =
             refresh_token_expires_at=(now + timedelta(seconds=int(refresh_expires_in))) if refresh_expires_in else None,
         ))
         db.commit()
-    return HTMLResponse(content="<h1>✅ Installed Successfully! You can close this tab.</h1>")
+
+    # ✅ Install hone ke baad user ko wapas React app par bhejein
+    return RedirectResponse(url="https://ingenious-caring-production-c9aed584.up.railway.app")
