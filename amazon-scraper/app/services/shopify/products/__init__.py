@@ -66,6 +66,31 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
         product_id = product_obj.get("id")
         
         if product_id:
+            # ✅ 1. Images upload karein (product create hone ke baad)
+            valid_images = []
+            for img in product_data.get('images', []):
+                if img and isinstance(img, str):
+                    if not img.startswith("http"): img = "https://" + img
+                    valid_images.append(img)
+            
+            if valid_images:
+                print(f"🖼️  Uploading {len(valid_images)} images...", flush=True)
+                media_mutation = """
+                mutation productCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+                  productCreateMedia(productId: $productId, media: $media) {
+                    media { id ... on MediaImage { image { url } } }
+                    userErrors { field message }
+                  }
+                }
+                """
+                media_payload = [{"originalSource": url, "mediaContentType": "IMAGE"} for url in valid_images]
+                media_res = await shopify_graphql(shop, access_token, media_mutation, {
+                    "productId": product_id,
+                    "media": media_payload
+                })
+                if 'errors' in media_res:
+                    print(f"⚠️ Media upload error: {media_res['errors']}", flush=True)
+
             in_stock, stock_qty = _variant_stock(product_data, default_stock_qty=0)
             if stock_qty is None:
                 stock_qty = 0
