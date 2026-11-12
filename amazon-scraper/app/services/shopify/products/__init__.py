@@ -376,25 +376,55 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     "variants": shopify_variants
                 })
                 
+                if 'errors' in var_result:
+                    print(f"❌ Variants GraphQL Error: {var_result['errors']}", flush=True)
+                    return {"errors": var_result['errors']}
+
+                var_user_errors = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("userErrors", [])
+                if var_user_errors:
+                    print(f"❌ Variants User Errors: {var_user_errors}", flush=True)
+                    return {"errors": var_user_errors}
+
+                # ✅ Har variant ki actual location fetch karein aur stock set karein
                 created_variants = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("productVariants", [])
-                stock_updates = []
+                
                 for cv in created_variants:
                     inv_item = cv.get("inventoryItem") or {}
                     sku = inv_item.get("sku")
                     inv_id = inv_item.get("id")
                     if not inv_id:
                         continue
-                    for idx, v_raw in enumerate(variants_raw):
+                    
+                    # ✅ Product ki actual location fetch karein
+                    inv_loc_query = """
+                    query getInventoryItemLocations($id: ID!) {
+                      inventoryItem(id: $id) {
+                        inventoryLevels(first: 5) {
+                          nodes { location { id name } }
+                        }
+                      }
+                    }
+                    """
+                    loc_res = await shopify_graphql(shop, access_token, inv_loc_query, {"id": inv_id})
+                    inv_levels = (loc_res.get("data", {}).get("inventoryItem", {}).get("inventoryLevels", {}).get("nodes") or [])
+                    
+                    actual_location_id = location_id
+                    if inv_levels:
+                        actual_location_id = inv_levels[0]["location"]["id"]
+                        print(f"📍 Variant {sku} actual location: {inv_levels[0]['location']['name']}", flush=True)
+                    
+                    for v_raw in variants_raw:
                         if v_raw.get("asin") == sku:
                             variant_stock = int(v_raw.get("stock_qty") or parent_stock_qty or 0)
-                            stock_updates.append({"inventoryItemId": inv_id, "locationId": location_id, "quantity": variant_stock})
+                            try:
+                                await _set_inventory_quantities(shop, access_token, [{
+                                    "inventoryItemId": inv_id,
+                                    "locationId": actual_location_id,
+                                    "quantity": variant_stock
+                                }])
+                            except Exception as e:
+                                print(f"⚠️ Inventory set failed for {sku}: {e}", flush=True)
                             break
-                
-                try:
-                    if stock_updates:
-                        await _set_inventory_quantities(shop, access_token, stock_updates)
-                except Exception as e:
-                    print(f"⚠️ Inventory set failed (Rest Variants): {e}", flush=True)
 
             # ✅ 4. Images ko variants ke sath attach karein
             media_query = """
