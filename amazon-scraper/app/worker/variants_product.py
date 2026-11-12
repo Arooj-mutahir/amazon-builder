@@ -16,16 +16,19 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
         print(f"❌ Shopify GraphQL Error: {result.get('errors')}", flush=True)
         return
 
-    # ✅ 2. Check karein ke Shopify ne productSet mein koi User Error toh nahi diya
-    user_errors = result.get("data", {}).get("productSet", {}).get("userErrors", [])
+    # ✅ 2. productCreate ke userErrors check karein
+    user_errors = result.get("data", {}).get("productCreate", {}).get("userErrors", [])
     if user_errors:
         print(f"❌ Product Creation User Errors: {user_errors}", flush=True)
-        return  # Error aane par aage mat badhein
+        return
 
-    shopify_id = result.get("data", {}).get("productSet", {}).get("product", {}).get("id")
+    # ✅ 3. productCreate se product ID nikaalein
+    shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
     if not shopify_id:
         print(f"❌ No product ID returned from Shopify!", flush=True)
         return
+
+    print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
@@ -34,27 +37,11 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
         db.commit()
 
     try:
-        product_obj = result.get("data", {}).get("productSet", {}).get("product", {}) or {}
-        variants_nodes = (product_obj.get("variants") or {}).get("nodes", [])
+        # ✅ 4. Variants ka data nikaalein (productCreate ke response se)
+        # Note: productCreate ke sath variants ka data nahi aata, isliye hum productVariantsBulkCreate ka response use karenge
+        # Jo create_shopify_product_with_variants ke andar call hota hai.
+        # Filhal hum DB save ke liye clean_variants ka use kar rahe hain, jo ke sahi hai.
         
-        variant_map = {}
-        inventory_item_map = {}
-        
-        for v_node in variants_nodes:
-            sku = v_node.get("sku")
-            if sku:
-                variant_map[sku] = v_node["id"]
-                inv_id = (v_node.get("inventoryItem") or {}).get("id")
-                if inv_id:
-                    inventory_item_map[sku] = inv_id
-
-        if variant_map and new_product:
-            new_product.shopify_variant_ids = variant_map
-            db.commit()
-        if inventory_item_map and new_product:
-            new_product.shopify_inventory_item_ids = inventory_item_map
-            db.commit()
-
         saved_variants_count = 0
         for v in clean_variants:
             v_asin = v.get("asin")
@@ -87,8 +74,6 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
                 child_existing.stock_quantity = int(v_resolved)
                 child_existing.is_available = v_in_stock
                 child_existing.availability = v_avail
-                if variant_map.get(v_asin): child_existing.shopify_variant_ids = {v_asin: variant_map.get(v_asin)}
-                if inventory_item_map.get(v_asin): child_existing.shopify_inventory_item_ids = {v_asin: inventory_item_map.get(v_asin)}
             else:
                 child_product = Product(
                     asin=v_asin, parent_asin=main_data.get("asin") or main_data.get("parent_asin"), is_variation=True,
@@ -100,8 +85,6 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
                     markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
                     variant_attributes=v.get("option_values") or [], categories=extracted_categories, tags=final_tags,
                     shopify_product_id=shopify_id,
-                    shopify_variant_ids={v_asin: variant_map.get(v_asin)} if variant_map.get(v_asin) else None,
-                    shopify_inventory_item_ids={v_asin: inventory_item_map.get(v_asin)} if inventory_item_map.get(v_asin) else None,
                     shopify_store_id=store.id, shopify_status="active",
                 )
                 db.add(child_product)
@@ -116,13 +99,15 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
     try:
         token = await _get_valid_access_token(store, db)
         await publish_product(shop_domain, token, shopify_id)
-    except Exception as e: print(f"⚠️ Auto-publish failed: {e}", flush=True)
+    except Exception as e: 
+        print(f"⚠️ Auto-publish failed: {e}", flush=True)
     
     if collection_ids:
         try:
             token = await _get_valid_access_token(store, db)
             await add_product_to_collections(shop_domain, token, shopify_id, collection_ids)
-        except Exception as e: print(f"⚠️ Collection add failed: {e}", flush=True)
+        except Exception as e: 
+            print(f"⚠️ Collection add failed: {e}", flush=True)
     
     try:
         raw_details = dict(main_data.get("details") or {}); raw_details["asin"] = main_data.get("asin")
