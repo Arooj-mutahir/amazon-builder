@@ -90,12 +90,20 @@ async def publish_product(shop: str, access_token: str, product_id: str) -> dict
     print(f"📢 Publishing product {product_id}...", flush=True)
     query_pub = "query getPublications { publications(first: 10) { edges { node { id name } } } }"
     pub_res = await shopify_graphql(shop, access_token, query_pub)
-    if "errors" in pub_res: return pub_res
+    
+    if "errors" in pub_res: 
+        print(f"❌ Error fetching publications: {pub_res['errors']}", flush=True)
+        return pub_res
 
     publications = pub_res.get("data", {}).get("publications", {}).get("edges", [])
-    online_store_id = next((pub["node"]["id"] for pub in publications if pub["node"]["name"] == "Online Store"), None)
+    if not publications:
+        print("❌ No publications found in this store!", flush=True)
+        return {"success": False, "message": "No publications found"}
 
-    if not online_store_id: return {"success": False, "message": "Online Store not found"}
+    # ✅ Pehla publication utha lein (chahe uska naam kuch bhi ho)
+    online_store_id = publications[0]["node"]["id"]
+    pub_name = publications[0]["node"]["name"]
+    print(f"✅ Using Publication: {pub_name} ({online_store_id})", flush=True)
 
     mutation = """
     mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
@@ -103,4 +111,15 @@ async def publish_product(shop: str, access_token: str, product_id: str) -> dict
     }
     """
     result = await shopify_graphql(shop, access_token, mutation, {"id": product_id, "input": [{"publicationId": online_store_id}]})
+    
+    # ✅ Error check aur print karein
+    if "errors" in result:
+        print(f"❌ Publish GraphQL Error: {result['errors']}", flush=True)
+    else:
+        user_errors = result.get("data", {}).get("publishablePublish", {}).get("userErrors", [])
+        if user_errors:
+            print(f"❌ Publish User Errors: {user_errors}", flush=True)
+        else:
+            print(f"✅ Product {product_id} published successfully to {pub_name}!", flush=True)
+            
     return result
