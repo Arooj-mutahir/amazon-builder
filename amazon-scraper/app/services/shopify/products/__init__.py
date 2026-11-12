@@ -11,6 +11,9 @@ from .media import _upload_media_and_get_id, _attach_variant_images
 # ============================================
 # CREATE SINGLE VARIANT PRODUCT
 # ============================================
+# ============================================
+# CREATE SINGLE VARIANT PRODUCT
+# ============================================
 async def create_shopify_product(shop: str, access_token: str, product_data: dict) -> dict:
     print(f'🛠️  Creating Single-Variant Product: {product_data.get("title")}', flush=True)
     
@@ -106,12 +109,32 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                     }]
                 })
 
-                # ✅ Inventory set karein (error handling ke sath)
+                # ✅ Product ki actual location fetch karein (inventoryItem se)
+                inv_loc_query = """
+                query getInventoryItemLocations($id: ID!) {
+                  inventoryItem(id: $id) {
+                    inventoryLevels(first: 5) {
+                      nodes { location { id name } }
+                    }
+                  }
+                }
+                """
+                loc_res = await shopify_graphql(shop, access_token, inv_loc_query, {"id": first_variant_inv_id})
+                inv_levels = (loc_res.get("data", {}).get("inventoryItem", {}).get("inventoryLevels", {}).get("nodes") or [])
+                
+                actual_location_id = location_id
+                if inv_levels:
+                    actual_location_id = inv_levels[0]["location"]["id"]
+                    print(f"📍 Product actual location: {inv_levels[0]['location']['name']} ({actual_location_id})", flush=True)
+                else:
+                    print(f"⚠️ No inventory levels found for this item. Using fallback location: {location_id}", flush=True)
+
+                # ✅ Ab us actual location par stock set karein
                 try:
-                    if first_variant_inv_id:
+                    if first_variant_inv_id and actual_location_id:
                         await _set_inventory_quantities(shop, access_token, [{
                             "inventoryItemId": first_variant_inv_id,
-                            "locationId": location_id,
+                            "locationId": actual_location_id,
                             "quantity": int(stock_qty)
                         }])
                 except Exception as e:
