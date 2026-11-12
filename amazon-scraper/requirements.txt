@@ -7,8 +7,7 @@ python-multipart
 
 # --- Database & ORM ---
 sqlalchemy
-psycopg2-binary
-psycopg
+psycopg[binary]
 alembic
 
 # --- Environment & Utilities ---
