@@ -1,13 +1,8 @@
-bottle
-cheroot
-curl_cffi
-beautifulsoup4
-lxml
-marshmallow
 # --- Core Web Framework ---
 fastapi
 uvicorn[standard]
 pydantic
+pydantic-settings
 python-multipart
 
 # --- Database & ORM ---
@@ -26,12 +21,12 @@ apscheduler
 # --- Shopify Integration ---
 ShopifyAPI
 
-# --- Supabase (Agar use kar rahe hain) ---
+# --- Supabase ---
 supabase
 gotrue
 postgrest
 
-# --- Amazon Scraper Dependencies (Aapki purani list) ---
+# --- Amazon Scraper Dependencies ---
 bottle
 cheroot
 curl_cffi
