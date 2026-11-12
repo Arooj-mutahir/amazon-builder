@@ -147,6 +147,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         location_id = await get_primary_location(shop, access_token)
         parent_stock_qty = _resolve_parent_stock(product_data, default_stock_qty=0)
         
+        # 1. Options aur Variants ko prepare karein
         per_variant_options = []
         for idx, v_raw in enumerate(variants_raw):
             opt_values = {}
@@ -193,37 +194,18 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             for img in (entry.get("images") or []):
                 _register(img)
 
+        # 2. ProductCreate mutation ka use karein (ProductSet se zyada reliable)
         mutation = """
-        mutation productSet($input: ProductSetInput!) {
-          productSet(input: $input) {
+        mutation productCreate($input: ProductInput!) {
+          productCreate(input: $input) {
             product { 
               id title handle 
-              media(first: 250) { nodes { id ... on MediaImage { image { url } } } } 
               variants(first: 100) { nodes { id sku inventoryItem { id } } } 
             }
             userErrors { field message }
           }
         }
         """
-
-        shopify_variants = []
-        for idx, v_raw in enumerate(variants_raw):
-            entry = per_variant_options[idx]
-            price = float(v_raw.get("price", 0.0) or 0.0)
-            v_final_price = _calculate_price(price, markup_val, markup_type, extra_percent, tax_rate)
-
-            variant_stock = int(v_raw.get("stock_qty") or parent_stock_qty or 0)
-            v_inventory_quantities = [{'locationId': location_id, 'name': 'available', 'quantity': variant_stock}] if location_id else []
-            
-            option_values_payload = [{"name": entry["opts"][name], "optionName": name} for name in option_names]
-
-            shopify_variants.append({
-                "price": str(v_final_price), 
-                "sku": v_raw.get("asin", ""),
-                "inventoryItem": {"tracked": True, "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}}},
-                "inventoryQuantities": v_inventory_quantities,
-                "optionValues": option_values_payload,
-            })
 
         amazon_categories = product_data.get('categories', []) or []
         prod_type = product_data.get('product_type') or (amazon_categories[-1] if amazon_categories else "General")
@@ -236,17 +218,20 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             product_data.get("reviews") or [],
         )
 
+        # Pehle simple product create karein (ek default variant ke sath)
         input_data = {
             'title': (product_data.get('title') or 'Untitled')[:255],
             'descriptionHtml': enhanced_description,
             'vendor': product_data.get('brand', ''),
             'productType': prod_type,
             'tags': ", ".join(product_data.get('tags', [])) if isinstance(product_data.get('tags'), list) else str(product_data.get('tags', '')),
-            'status': 'ACTIVE',
-            'productOptions': product_options,
-            'variants': shopify_variants,
+            'status': 'DRAFT',  # DRAFT rakhein taake fail na ho
+            'productOptions': [{'name': 'Title', 'values': [{'name': 'Default'}]}],
         }
-        if gallery_urls: input_data['files'] = [{'originalSource': u} for u in gallery_urls]
+        
+        # Images alag se upload karein
+        if gallery_urls: 
+            input_data['files'] = [{'originalSource': u} for u in gallery_urls]
 
         if amazon_categories:
             shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories)
@@ -255,86 +240,88 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
 
         result = await shopify_graphql(shop, access_token, mutation, {'input': input_data})
         
+        print(f"🔍 CREATE RESPONSE: {result}", flush=True)
+
         if 'errors' in result:
             return result
             
-        user_errors = result.get('data', {}).get('productSet', {}).get('userErrors', [])
+        user_errors = result.get('data', {}).get('productCreate', {}).get('userErrors', [])
         if user_errors:
             return {'errors': user_errors}
 
-        product_obj = result.get('data', {}).get('productSet', {}).get('product') or {}
+        product_obj = result.get('data', {}).get('productCreate', {}).get('product') or {}
         product_id = product_obj.get('id')
-        
+
+        # 3. Ab variants ko update karein (bulk create)
         if product_id:
-            try:
-                await shopify_graphql(shop, access_token, """
-                mutation productUpdate($input: ProductInput!) {
-                  productUpdate(input: $input) {
-                    userErrors { field message }
-                  }
-                }
-                """, {"input": {"id": product_id, "descriptionHtml": enhanced_description}})
-                print("✅ Description force-updated (Multi)!", flush=True)
-            except Exception as e:
-                print(f"⚠️ Description update failed: {e}", flush=True)
-
-            await asyncio.sleep(6) 
-
-            try:
-                price_updates = []
-                for idx, v_raw in enumerate(variants_raw):
-                    price = float(v_raw.get("price", 0.0) or 0.0)
-                    v_final_price = _calculate_price(price, markup_val, markup_type, extra_percent, tax_rate)
-                    for v_node in (product_obj.get('variants') or {}).get('nodes') or []:
-                        if v_node.get("sku") == v_raw.get("asin"):
-                            price_updates.append({"id": v_node["id"], "price": str(v_final_price)})
-                            break
+            variants_to_create = []
+            for idx, v_raw in enumerate(variants_raw):
+                entry = per_variant_options[idx]
+                price = float(v_raw.get("price", 0.0) or 0.0)
+                v_final_price = _calculate_price(price, markup_val, markup_type, extra_percent, tax_rate)
                 
-                if price_updates:
-                    price_mutation = """
-                    mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-                      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-                        userErrors { field message }
-                      }
-                    }
-                    """
-                    await shopify_graphql(shop, access_token, price_mutation, {"productId": product_id, "variants": price_updates})
-            except Exception as e:
-                print(f"⚠️ Failed to update exact prices on create: {e}", flush=True)
+                option_values_payload = [{"name": entry["opts"][name], "optionName": name} for name in option_names]
+                
+                variants_to_create.append({
+                    "price": str(v_final_price),
+                    "sku": v_raw.get("asin", ""),
+                    "inventoryItem": {"tracked": True, "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}}},
+                    "optionValues": option_values_payload,
+                })
 
-            try:
-                stock_updates = []
-                for idx, v_raw in enumerate(variants_raw):
-                    variant_stock = int(v_raw.get("stock_qty") or parent_stock_qty or 0)
-                    for v_node in (product_obj.get('variants') or {}).get('nodes') or []:
-                        if v_node.get("sku") == v_raw.get("asin"):
-                            inv_id = (v_node.get('inventoryItem') or {}).get('id')
-                            if inv_id:
-                                stock_updates.append({"inventoryItemId": inv_id, "locationId": location_id, "quantity": int(variant_stock)})
-                            break
-                if stock_updates:
-                    await _set_inventory_quantities(shop, access_token, stock_updates)
-            except Exception as e:
-                print(f"⚠️ Failed to set stock on create: {e}", flush=True)
-
-            try:
-                media_query = """
-                query getProductMedia($id: ID!) {
-                  product(id: $id) {
-                    media(first: 250) { nodes { id ... on MediaImage { image { url } } } }
-                    variants(first: 100) { nodes { id sku inventoryItem { id } } }
-                  }
+            # Product options ko update karein
+            update_opts_mutation = """
+            mutation productUpdate($input: ProductInput!) {
+              productUpdate(input: $input) {
+                product { id }
+                userErrors { field message }
+              }
+            }
+            """
+            await shopify_graphql(shop, access_token, update_opts_mutation, {
+                "input": {
+                    "id": product_id,
+                    "productOptions": product_options
                 }
-                """
-                media_result = await shopify_graphql(shop, access_token, media_query, {"id": product_id})
-                refreshed_product = (media_result.get("data") or {}).get("product") or {}
-                fresh_media   = (refreshed_product.get("media")    or {}).get("nodes") or []
-                fresh_variants= (refreshed_product.get("variants") or {}).get("nodes") or []
-            except Exception as e:
-                fresh_media    = (product_obj.get('media')    or {}).get('nodes') or []
-                fresh_variants = (product_obj.get('variants') or {}).get('nodes') or []
+            })
 
-            await _attach_variant_images(shop, access_token, product_id, fresh_media, fresh_variants, per_variant_options, gallery_urls)
+            # Naye variants add karein
+            create_variants_mutation = """
+            mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                productVariants { id sku inventoryItem { id } }
+                userErrors { field message }
+              }
+            }
+            """
+            
+            var_result = await shopify_graphql(shop, access_token, create_variants_mutation, {
+                "productId": product_id,
+                "variants": variants_to_create
+            })
+            
+            print(f"🔍 VARIANTS RESPONSE: {var_result}", flush=True)
+
+            # 4. Inventory set karein
+            created_variants = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("productVariants", [])
+            stock_updates = []
+            for cv in created_variants:
+                sku = cv.get("sku")
+                inv_id = (cv.get("inventoryItem") or {}).get("id")
+                for idx, v_raw in enumerate(variants_raw):
+                    if v_raw.get("asin") == sku:
+                        variant_stock = int(v_raw.get("stock_qty") or parent_stock_qty or 0)
+                        stock_updates.append({"inventoryItemId": inv_id, "locationId": location_id, "quantity": variant_stock})
+                        break
+            
+            if stock_updates:
+                await _set_inventory_quantities(shop, access_token, stock_updates)
+
+            # 5. Images ko variants ke sath attach karein
+            if gallery_urls:
+                await _attach_variant_images(shop, access_token, product_id, [], created_variants, per_variant_options, gallery_urls)
+
+            # 6. Product ko publish karein
             await publish_product(shop, access_token, product_id)
 
         return result
