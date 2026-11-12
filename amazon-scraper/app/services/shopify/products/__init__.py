@@ -147,7 +147,6 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         location_id = await get_primary_location(shop, access_token)
         parent_stock_qty = _resolve_parent_stock(product_data, default_stock_qty=0)
         
-        # 1. Options aur Variants ko prepare karein
         per_variant_options = []
         for idx, v_raw in enumerate(variants_raw):
             opt_values = {}
@@ -194,19 +193,6 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             for img in (entry.get("images") or []):
                 _register(img)
 
-        # 2. ProductCreate mutation ka use karein (ProductSet se zyada reliable)
-        mutation = """
-        mutation productCreate($input: ProductInput!) {
-          productCreate(input: $input) {
-            product { 
-              id title handle 
-              variants(first: 100) { nodes { id sku inventoryItem { id } } } 
-            }
-            userErrors { field message }
-          }
-        }
-        """
-
         amazon_categories = product_data.get('categories', []) or []
         prod_type = product_data.get('product_type') or (amazon_categories[-1] if amazon_categories else "General")
         
@@ -218,27 +204,33 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             product_data.get("reviews") or [],
         )
 
-        # Pehle simple product create karein (ek default variant ke sath)
+        # 1. ProductCreate mutation (Simple product create karein)
+        create_mutation = """
+        mutation productCreate($input: ProductInput!) {
+          productCreate(input: $input) {
+            product { id title handle }
+            userErrors { field message }
+          }
+        }
+        """
+
         input_data = {
             'title': (product_data.get('title') or 'Untitled')[:255],
             'descriptionHtml': enhanced_description,
             'vendor': product_data.get('brand', ''),
             'productType': prod_type,
             'tags': ", ".join(product_data.get('tags', [])) if isinstance(product_data.get('tags'), list) else str(product_data.get('tags', '')),
-            'status': 'DRAFT',  # DRAFT rakhein taake fail na ho
-            'productOptions': [{'name': 'Title', 'values': [{'name': 'Default'}]}],
+            'status': 'DRAFT',  # DRAFT mein rakhein
+            'productOptions': product_options,
         }
-        
-        # Images alag se upload karein
-        if gallery_urls: 
-            input_data['files'] = [{'originalSource': u} for u in gallery_urls]
 
         if amazon_categories:
             shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories)
             if shopify_category_id:
                 input_data['category'] = shopify_category_id
 
-        result = await shopify_graphql(shop, access_token, mutation, {'input': input_data})
+        print(f"📡 Sending productCreate request...", flush=True)
+        result = await shopify_graphql(shop, access_token, create_mutation, {'input': input_data})
         
         print(f"🔍 CREATE RESPONSE: {result}", flush=True)
 
@@ -252,41 +244,24 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         product_obj = result.get('data', {}).get('productCreate', {}).get('product') or {}
         product_id = product_obj.get('id')
 
-        # 3. Ab variants ko update karein (bulk create)
+        # 2. Ab variants add karein (productVariantsBulkCreate)
         if product_id:
-            variants_to_create = []
+            shopify_variants = []
             for idx, v_raw in enumerate(variants_raw):
                 entry = per_variant_options[idx]
                 price = float(v_raw.get("price", 0.0) or 0.0)
                 v_final_price = _calculate_price(price, markup_val, markup_type, extra_percent, tax_rate)
                 
                 option_values_payload = [{"name": entry["opts"][name], "optionName": name} for name in option_names]
-                
-                variants_to_create.append({
+
+                shopify_variants.append({
                     "price": str(v_final_price),
                     "sku": v_raw.get("asin", ""),
                     "inventoryItem": {"tracked": True, "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}}},
                     "optionValues": option_values_payload,
                 })
 
-            # Product options ko update karein
-            update_opts_mutation = """
-            mutation productUpdate($input: ProductInput!) {
-              productUpdate(input: $input) {
-                product { id }
-                userErrors { field message }
-              }
-            }
-            """
-            await shopify_graphql(shop, access_token, update_opts_mutation, {
-                "input": {
-                    "id": product_id,
-                    "productOptions": product_options
-                }
-            })
-
-            # Naye variants add karein
-            create_variants_mutation = """
+            variants_mutation = """
             mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
               productVariantsBulkCreate(productId: $productId, variants: $variants) {
                 productVariants { id sku inventoryItem { id } }
@@ -295,14 +270,14 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             }
             """
             
-            var_result = await shopify_graphql(shop, access_token, create_variants_mutation, {
+            var_result = await shopify_graphql(shop, access_token, variants_mutation, {
                 "productId": product_id,
-                "variants": variants_to_create
+                "variants": shopify_variants
             })
             
             print(f"🔍 VARIANTS RESPONSE: {var_result}", flush=True)
 
-            # 4. Inventory set karein
+            # 3. Inventory set karein
             created_variants = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("productVariants", [])
             stock_updates = []
             for cv in created_variants:
@@ -317,11 +292,10 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             if stock_updates:
                 await _set_inventory_quantities(shop, access_token, stock_updates)
 
-            # 5. Images ko variants ke sath attach karein
-            if gallery_urls:
-                await _attach_variant_images(shop, access_token, product_id, [], created_variants, per_variant_options, gallery_urls)
+            # 4. Images ko upload karein (alag mutation)
+            # (Yeh aapke _attach_variant_images function mein handle ho jata hai)
 
-            # 6. Product ko publish karein
+            # 5. Product ko publish karein
             await publish_product(shop, access_token, product_id)
 
         return result
