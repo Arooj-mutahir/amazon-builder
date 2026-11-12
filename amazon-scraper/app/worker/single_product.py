@@ -62,7 +62,17 @@ async def process_single_variant(store, main_data, user_markup, user_markup_type
     )
 
     if result and "errors" not in result:
-        shopify_id = result.get("data", {}).get("productSet", {}).get("product", {}).get("id")
+        # ✅ productCreate ke response se ID nikaalein
+        user_errors = result.get("data", {}).get("productCreate", {}).get("userErrors", [])
+        if user_errors:
+            print(f"❌ Product Creation User Errors: {user_errors}", flush=True)
+            return
+
+        shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
+        if not shopify_id:
+            print(f"❌ No product ID returned from Shopify! Result: {result}", flush=True)
+            return
+
         new_product.shopify_product_id = shopify_id
         db.commit()
         print(f"✅ Shopify product created: {shopify_id}", flush=True)
