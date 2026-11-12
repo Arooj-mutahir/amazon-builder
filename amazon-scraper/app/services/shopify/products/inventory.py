@@ -1,3 +1,4 @@
+# app/services/shopify/products/inventory.py
 from ..client import shopify_graphql
 
 async def _set_inventory_quantities(shop, access_token, quantities: list) -> dict:
