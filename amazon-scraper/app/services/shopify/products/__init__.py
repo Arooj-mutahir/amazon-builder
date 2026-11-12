@@ -22,7 +22,7 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
         create_mutation = """
         mutation productCreate($input: ProductInput!) {
           productCreate(input: $input) {
-            product { id title handle }  # ✅ ID return karein
+            product { id title handle }
             userErrors { field message }
           }
         }
