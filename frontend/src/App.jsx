@@ -33,7 +33,7 @@ export default function App() {
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
         if (res.data.length > 0) {
-          setSelectedStore(res.data[0].shop_domain); // Pehla store default select
+          setSelectedStore(res.data[0].shop_domain);
         }
       } catch (err) {
         console.error("Failed to fetch stores", err);
@@ -45,7 +45,7 @@ export default function App() {
   // 2. Jab Store Change ho toh uski Collections Fetch karein
   useEffect(() => {
     const fetchCollections = async () => {
-      if (!selectedStore) return; // Agar store select nahi hai toh na chale
+      if (!selectedStore) return;
       try {
         const res = await axios.get(`${API_URL}/collections?shop=${selectedStore}`);
         if (res.data.collections) setCollections(res.data.collections);
@@ -60,7 +60,6 @@ export default function App() {
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
-      // User ko backend ke install route par bhej dein jahan se OAuth shuru hoga
       window.location.href = `https://amazon-builder-production.up.railway.app/api/shopify/install?shop=${newShop}`;
     }
   };
@@ -113,12 +112,12 @@ export default function App() {
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* Agar koi store connected nahi hai, toh Connect button show karein */}
-        {stores.length === 0 && activeTab === 'dashboard' && (
-          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
-            <p>No Shopify store connected yet.</p>
-            <button onClick={handleConnectStore} className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition">
-              Connect Store
+        {/* ✅ Hamesha Connect Store Button Dikhayein */}
+        {activeTab === 'dashboard' && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
+            <p>Connect a new Shopify store to manage its products.</p>
+            <button onClick={handleConnectStore} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition">
+              + Connect New Store
             </button>
           </div>
         )}
@@ -131,7 +130,7 @@ export default function App() {
             collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
             markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
             error={error} successMsg={successMsg}
-            onConnectStore={handleConnectStore} // Pass kiya taake Dashboard se bhi connect ho sake
+            onConnectStore={handleConnectStore}
           />
         ) : (
           <Settings onBack={handleBackFromSettings} />
