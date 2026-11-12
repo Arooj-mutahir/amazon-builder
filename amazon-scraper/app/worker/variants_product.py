@@ -11,11 +11,22 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
         markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
     )
 
+    # ✅ 1. Check karein ke GraphQL level par koi error toh nahi
     if not result or "errors" in result:
-        print(f"❌ Shopify Error: {result.get('errors')}", flush=True)
+        print(f"❌ Shopify GraphQL Error: {result.get('errors')}", flush=True)
         return
 
+    # ✅ 2. Check karein ke Shopify ne productSet mein koi User Error toh nahi diya
+    user_errors = result.get("data", {}).get("productSet", {}).get("userErrors", [])
+    if user_errors:
+        print(f"❌ Product Creation User Errors: {user_errors}", flush=True)
+        return  # Error aane par aage mat badhein
+
     shopify_id = result.get("data", {}).get("productSet", {}).get("product", {}).get("id")
+    if not shopify_id:
+        print(f"❌ No product ID returned from Shopify!", flush=True)
+        return
+
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
     if new_product:
