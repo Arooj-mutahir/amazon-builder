@@ -4,10 +4,40 @@ curl_cffi
 beautifulsoup4
 lxml
 marshmallow
+# --- Core Web Framework ---
 fastapi
 uvicorn[standard]
+pydantic
+python-multipart
+
+# --- Database & ORM ---
 sqlalchemy
 psycopg2-binary
+alembic
+
+# --- Environment & Utilities ---
 python-dotenv
 requests
+httpx
+
+# --- Background Jobs / Scheduler ---
 apscheduler
+
+# --- Shopify Integration ---
+ShopifyAPI
+
+# --- Supabase (Agar use kar rahe hain) ---
+supabase
+gotrue
+postgrest
+
+# --- Amazon Scraper Dependencies (Aapki purani list) ---
+bottle
+cheroot
+curl_cffi
+beautifulsoup4
+lxml
+marshmallow
+
+# --- Security / Webhooks ---
+cryptography
