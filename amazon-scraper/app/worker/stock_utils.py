@@ -1,5 +1,5 @@
 # app/worker/stock_utils.py
-
+from typing import Optional
 def _get_availability(v_raw: dict):
     val = v_raw.get("is_available")
     if val is None:
