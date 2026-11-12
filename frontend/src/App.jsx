@@ -12,11 +12,9 @@ export default function App() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   
-  const [stores] = useState([
-    'test-store-ispfraip.myshopify.com',
-    'amazon-product-manager.myshopify.com'
-  ]);
-  const [selectedStore, setSelectedStore] = useState('test-store-ispfraip.myshopify.com');
+  // ✅ Stores ab dynamic hain (hardcoded nahi)
+  const [stores, setStores] = useState([]);
+  const [selectedStore, setSelectedStore] = useState('');
   
   const [markup, setMarkup] = useState(() => localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(() => localStorage.getItem('global_markup_type') || 'percent');
@@ -26,23 +24,51 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  // ✅ YAHAN CHANGE HUA HAI: Ab yeh Railway ke variable se URL uthayega
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/shopify';
 
+  // 1. Connected Stores Fetch Karein
+  useEffect(() => {
+    const fetchStores = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/stores`);
+        setStores(res.data);
+        if (res.data.length > 0) {
+          setSelectedStore(res.data[0].shop_domain); // Pehla store default select
+        }
+      } catch (err) {
+        console.error("Failed to fetch stores", err);
+      }
+    };
+    fetchStores();
+  }, [API_URL]);
+
+  // 2. Jab Store Change ho toh uski Collections Fetch karein
   useEffect(() => {
     const fetchCollections = async () => {
+      if (!selectedStore) return; // Agar store select nahi hai toh na chale
       try {
-        const res = await axios.get(`${API_URL}/collections`);
+        const res = await axios.get(`${API_URL}/collections?shop=${selectedStore}`);
         if (res.data.collections) setCollections(res.data.collections);
       } catch (err) {
         console.error("Failed to fetch collections", err);
       }
     };
     fetchCollections();
-  }, [API_URL]); // API_URL ko dependency array mein add karna best practice hai
+  }, [selectedStore, API_URL]);
+
+  // 3. Naya Store Connect Karne ka Function (Auto-Detect)
+  const handleConnectStore = () => {
+    const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
+    if (newShop) {
+      // User ko backend ke install route par bhej dein jahan se OAuth shuru hoga
+      window.location.href = `https://amazon-builder-production.up.railway.app/api/shopify/install?shop=${newShop}`;
+    }
+  };
 
   const handlePushToShopify = async () => {
     if (!url) return setError('Please enter an Amazon URL');
+    if (!selectedStore) return setError('Please connect a Shopify store first');
+    
     setLoading(true);
     setError('');
     setSuccessMsg('');
@@ -86,6 +112,17 @@ export default function App() {
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
+        
+        {/* Agar koi store connected nahi hai, toh Connect button show karein */}
+        {stores.length === 0 && activeTab === 'dashboard' && (
+          <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
+            <p>No Shopify store connected yet.</p>
+            <button onClick={handleConnectStore} className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded transition">
+              Connect Store
+            </button>
+          </div>
+        )}
+
         {activeTab === 'dashboard' ? (
           <DashboardView 
             url={url} setUrl={setUrl}
@@ -94,6 +131,7 @@ export default function App() {
             collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
             markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
             error={error} successMsg={successMsg}
+            onConnectStore={handleConnectStore} // Pass kiya taake Dashboard se bhi connect ho sake
           />
         ) : (
           <Settings onBack={handleBackFromSettings} />
