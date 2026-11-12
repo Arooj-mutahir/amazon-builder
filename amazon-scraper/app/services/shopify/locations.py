@@ -3,7 +3,7 @@ from .client import shopify_graphql
 async def get_primary_location(shop: str, access_token: str) -> str:
     query = """
     query getLocations {
-      locations(first: 5, includeInactive: false) {
+      locations(first: 10, includeInactive: false) {
         nodes { id name isActive }
       }
     }
@@ -11,11 +11,23 @@ async def get_primary_location(shop: str, access_token: str) -> str:
     result = await shopify_graphql(shop, access_token, query, {})
     try:
         locations = (result.get("data") or {}).get("locations", {}).get("nodes") or []
+        
+        # ✅ 1. Pehle "Default location" dhoondein (Shopify ka default naam)
+        for loc in locations:
+            if loc.get("name") == "Default location":
+                print(f"📍 Using Default location: {loc['name']} ({loc['id']})", flush=True)
+                return loc["id"]
+        
+        # ✅ 2. Agar "Default location" na mile, toh koi bhi active location utha lein
         for loc in locations:
             if loc.get("isActive"):
-                print(f"📍 Using location: {loc['name']} ({loc['id']})", flush=True)
+                print(f"📍 Using active location: {loc['name']} ({loc['id']})", flush=True)
                 return loc["id"]
-        if locations: return locations[0]["id"]
+                
+        # ✅ 3. Agar kuch na mile toh pehli location
+        if locations: 
+            return locations[0]["id"]
+            
     except Exception as e:
         print(f"⚠️ Location fetch failed: {e}", flush=True)
     return None
