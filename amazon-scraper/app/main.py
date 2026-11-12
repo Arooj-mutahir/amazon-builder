@@ -1,8 +1,9 @@
 import uvicorn
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 from contextlib import asynccontextmanager
 
 # ✅ Router import
@@ -33,7 +34,11 @@ app.add_middleware(
 app.include_router(shopify_router, prefix="/api/shopify")
 
 @app.get("/")
-def read_root():
+def read_root(request: Request):
+    # ✅ Agar Shopify se request aayi hai (URL mein hmac ya host hai), toh React app par bhejein
+    if "hmac" in request.query_params or "host" in request.query_params:
+        return RedirectResponse(url="https://ingenious-caring-production-c9aed584.up.railway.app")
+    
     return {"status": "success", "message": "Scraper & Shopify Server is running!"}
 
 # Agar static folder nahi hai toh yeh error nahi dega
