@@ -23,8 +23,11 @@ export default function UrlStoreInput({
         onChange={(e) => setSelectedStore(e.target.value)}
         disabled={loading}
       >
-        {stores.map(store => (
-          <option key={store} value={store}>{store.split('.')[0]}</option>
+        {stores.map((store) => (
+          // ✅ Yahan store.shop_domain use kiya hai
+          <option key={store.id || store.shop_domain} value={store.shop_domain}>
+            {store.shop_domain.split('.')[0]}
+          </option>
         ))}
       </select>
     </div>
