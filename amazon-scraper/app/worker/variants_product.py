@@ -11,18 +11,15 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
         markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
     )
 
-    # ✅ 1. Check karein ke GraphQL level par koi error toh nahi
     if not result or "errors" in result:
         print(f"❌ Shopify GraphQL Error: {result.get('errors')}", flush=True)
         return
 
-    # ✅ 2. productCreate ke userErrors check karein
     user_errors = result.get("data", {}).get("productCreate", {}).get("userErrors", [])
     if user_errors:
         print(f"❌ Product Creation User Errors: {user_errors}", flush=True)
         return
 
-    # ✅ 3. productCreate se product ID nikaalein
     shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
     if not shopify_id:
         print(f"❌ No product ID returned from Shopify!", flush=True)
@@ -31,17 +28,11 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
-    
     if new_product:
         new_product.shopify_product_id = shopify_id
         db.commit()
 
     try:
-        # ✅ 4. Variants ka data nikaalein (productCreate ke response se)
-        # Note: productCreate ke sath variants ka data nahi aata, isliye hum productVariantsBulkCreate ka response use karenge
-        # Jo create_shopify_product_with_variants ke andar call hota hai.
-        # Filhal hum DB save ke liye clean_variants ka use kar rahe hain, jo ke sahi hai.
-        
         saved_variants_count = 0
         for v in clean_variants:
             v_asin = v.get("asin")
