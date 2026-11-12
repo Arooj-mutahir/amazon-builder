@@ -26,7 +26,8 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  const API_URL = 'http://localhost:8080/api/shopify';
+  // ✅ YAHAN CHANGE HUA HAI: Ab yeh Railway ke variable se URL uthayega
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/shopify';
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -38,7 +39,7 @@ export default function App() {
       }
     };
     fetchCollections();
-  }, []);
+  }, [API_URL]); // API_URL ko dependency array mein add karna best practice hai
 
   const handlePushToShopify = async () => {
     if (!url) return setError('Please enter an Amazon URL');
