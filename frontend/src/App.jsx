@@ -24,7 +24,9 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/shopify';
+  // ✅ DYNAMIC API URL: Yeh khud detect karega ke aap kis URL par ho
+  // Agar aap Railway par ho toh Railway ka URL, cPanel par ho toh cPanel ka URL
+  const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
   // 1. Connected Stores Fetch Karein
   useEffect(() => {
@@ -56,11 +58,12 @@ export default function App() {
     fetchCollections();
   }, [selectedStore, API_URL]);
 
-  // 3. Naya Store Connect Karne ka Function (Auto-Detect)
+  // 3. Naya Store Connect Karne ka Function (FIXED)
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
-      window.location.href = `https://amazon-builder-production.up.railway.app/api/shopify/install?shop=${newShop}`;
+      // ✅ Railway wala purana URL hata kar dynamic URL lagaya hai
+      window.location.href = `${window.location.origin}/api/shopify/install?shop=${newShop}`;
     }
   };
 
