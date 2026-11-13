@@ -59,10 +59,11 @@ async def process_single_variant(store, main_data, user_markup, user_markup_type
     # ✅ Store ka naam log karein
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
 
+    # ✅ FIX: store=store aur db=db hata diya hai kyunki function unhe accept nahi karta
     result = await create_shopify_product(
-        shop=shop_domain, access_token=await _get_valid_access_token(store, db), 
-        product_data=shopify_payload,
-        store=store, db=db,
+        shop=shop_domain, 
+        access_token=await _get_valid_access_token(store, db), 
+        product_data=shopify_payload
     )
 
     if result and "errors" not in result:
