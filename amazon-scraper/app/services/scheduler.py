@@ -4,7 +4,9 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from app.api.routes.shopify.worker import sync_prices_job, run_price_update_now
+# ✅ FIX: sync_prices_job asli file (sync_job.py) se import ho raha hai
+from app.worker.sync_job import sync_prices_job 
+from app.api.routes.shopify.worker import run_price_update_now
 
 scheduler = AsyncIOScheduler()
 
