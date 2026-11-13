@@ -36,13 +36,13 @@ app.include_router(shopify_router, prefix="/api/shopify")
 @app.get("/")
 def read_root(request: Request):
     # ✅ If Shopify opens the app (has hmac or host param), serve the React app
-    # Pass ALL query params through so App Bridge gets ?shop=, ?hmac=, ?host= etc.
     if "hmac" in request.query_params or "host" in request.query_params:
-        # Build query string to forward to frontend
         qs = str(request.url.query)
         frontend_url = "https://ingenious-caring-production-c9aed584.up.railway.app"
         redirect_target = f"{frontend_url}?{qs}" if qs else frontend_url
-        return RedirectResponse(url=redirect_target)
+        
+        # 🚨 FIX: Yahan 302 lagana zaroori hai taaki white screen na aaye
+        return RedirectResponse(url=redirect_target, status_code=302)
     
     return {"status": "success", "message": "Scraper & Shopify Server is running!"}
 
@@ -51,4 +51,5 @@ if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
 if __name__ == "__main__":
+    # Note: Uvicorn ko normally "app.main:app" se run karte hain
     uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=True)
