@@ -6,8 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 from app.database import get_db
 from app.models import ShopifyStore
-from app.services.shopify import build_auth_url, exchange_code_for_token
-from app.services.shopify.shopify_auth import verify_hmac
+
+# ✅ FIX: Imports ko aapke folder structure ke hisaab se theek kiya
+from app.services.shopify_auth import (
+    build_auth_url, 
+    exchange_code_for_token, 
+    verify_hmac
+)
 from app.services.shopify.locations import get_primary_location
 from app.services.shopify.client import shopify_graphql
 
