@@ -56,13 +56,17 @@ async def process_single_variant(store, main_data, user_markup, user_markup_type
         )
         db.add(new_product); db.commit(); db.refresh(new_product)
 
-    # ✅ Store ka naam log karein
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
 
-    # ✅ FIX: store=store aur db=db hata diya hai kyunki function unhe accept nahi karta
+    # ✅ FIX: Product create karne se pehle FRESH token lein (force_refresh=True)
+    print(f"🔄 Refreshing token before product creation for {shop_domain}...", flush=True)
+    fresh_token = await _get_valid_access_token(store, db, force_refresh=True)
+    print(f"🔑 Fresh token obtained: {fresh_token[:15]}...", flush=True)
+
+    # ✅ Create product with fresh token
     result = await create_shopify_product(
         shop=shop_domain, 
-        access_token=await _get_valid_access_token(store, db), 
+        access_token=fresh_token,  # ✅ Fresh token pass kiya
         product_data=shopify_payload
     )
 

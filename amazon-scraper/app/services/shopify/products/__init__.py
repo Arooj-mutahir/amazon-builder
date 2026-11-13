@@ -8,6 +8,16 @@ from .pricing import _calculate_price
 from .inventory import _set_inventory_quantities
 from .media import _upload_media_and_get_id, _attach_variant_images
 
+# ✅ Helper function for Auth Token Refresh
+async def _get_fresh_token_for_store(shop_domain: str, db_session) -> str:
+    from app.models import ShopifyStore
+    from app.api.routes.shopify.helpers import _get_valid_access_token
+    
+    store = db_session.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop_domain).first()
+    if not store:
+        return None
+    return await _get_valid_access_token(store, db_session)
+
 # ============================================
 # CREATE SINGLE VARIANT PRODUCT
 # ============================================
@@ -15,9 +25,14 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
     print(f'🛠️  Creating Single-Variant Product: {product_data.get("title")}', flush=True)
     
     try:
+        # ✅ Token check & refresh if expired (Though it should be fresh from caller)
         location_id = await get_primary_location(shop, access_token)
         amazon_categories = product_data.get('categories', []) or []
-        shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories) if amazon_categories else None
+        
+        # ✅ Category search with potential 401 error
+        shopify_category_id = None
+        if amazon_categories:
+            shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories)
         
         create_mutation = """
         mutation productCreate($input: ProductInput!) {
@@ -50,8 +65,14 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
         if shopify_category_id: 
             input_data['category'] = shopify_category_id
 
+        # ✅ Create Product
         result = await shopify_graphql(shop, access_token, create_mutation, {'input': input_data})
         
+        # ✅ Handle 401 Error gracefully
+        if 'errors' in result and "401" in str(result['errors']):
+            print(f"⚠️ 401 Error detected. Token might be invalid.", flush=True)
+            return result # Error will be handled by caller
+
         if 'errors' in result:
             return result
             
@@ -265,6 +286,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             if shopify_category_id:
                 input_data['category'] = shopify_category_id
 
+        # ✅ Create Product
         result = await shopify_graphql(shop, access_token, create_mutation, {'input': input_data})
         
         if 'errors' in result:
