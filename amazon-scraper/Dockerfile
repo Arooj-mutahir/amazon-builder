@@ -1,24 +1,20 @@
-# Python 3.12 slim image use karein
 FROM python:3.12-slim
 
-# Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Working directory set karein
+# Working directory set karein (Root mein)
 WORKDIR /app
 
-# Pehle requirements copy karein (taake cache use ho)
+# Pehle dependencies install karein (Caching ke liye)
 COPY requirements.txt .
-
-# Dependencies install karein
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-# Baaki saari files copy karein (dist folder included)
+# Saari files copy karein (Jisme aapka 'dist' folder bhi shamil hai)
 COPY . .
 
-# Railway ke liye port expose karein (FastAPI 8080 use kar raha hai)
+# Railway internally port 8080 use karta hai
 EXPOSE 8080
 
-# App ko run karein (Agar aapke paas run.py hai toh usko yahan rakh sakte hain, warna main.py)
+# Uvicorn ko directly run karein
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
