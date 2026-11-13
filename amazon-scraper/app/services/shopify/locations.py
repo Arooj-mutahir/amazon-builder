@@ -1,6 +1,25 @@
 # app/services/shopify/locations.py
 from .client import shopify_graphql
 
+
+async def get_location_id_for_store(store, db, access_token: str) -> str:
+    """
+    Returns the location_id for a store.
+    1. If store.shopify_location_id is already saved → return it.
+    2. Otherwise, fetch from Shopify GraphQL, save to DB, and return it.
+    """
+    if store.shopify_location_id:
+        return store.shopify_location_id
+
+    # Not cached — fetch live
+    location_id = await get_primary_location(store.shop_domain, access_token)
+    if location_id:
+        store.shopify_location_id = location_id
+        db.commit()
+        print(f"✅ Cached new location_id for {store.shop_domain}: {location_id}", flush=True)
+    return location_id
+
+
 async def get_primary_location(shop: str, access_token: str) -> str:
     query = """
     query getLocations {

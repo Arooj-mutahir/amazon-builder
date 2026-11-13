@@ -2,7 +2,9 @@ import { useState } from 'react';
 import axios from 'axios'; 
 import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles } from 'lucide-react';
 
-export default function Settings({ onBack }) {
+const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
+
+export default function Settings({ onBack, shopDomain }) {
   const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(localStorage.getItem('global_extra_percent') || '0');
@@ -21,8 +23,8 @@ export default function Settings({ onBack }) {
 
     // 2. Database update karo (Cron Job ke liye)
     try {
-      await axios.post('http://localhost:8080/api/shopify/app/save-settings', {
-        shop_domain: "test-store-ispfraip.myshopify.com", 
+      await axios.post(`${API_URL}/app/save-settings`, {
+        shop_domain: shopDomain,
         markup: parseFloat(markup || 0),
         markup_type: markupType,
         extra_percent: finalExtraPercent, // ✅ Yahan 0 jayega

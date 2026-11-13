@@ -1,41 +1,32 @@
-import { Link as LinkIcon } from 'lucide-react';
+import React from 'react';
+import UrlStoreInput from './UrlStoreInput';
+import PricingSummary from './PricingSummary';
+import CollectionSelector from './CollectionSelector';
+import SubmitButton from './SubmitButton';
 
-export default function UrlStoreInput({ 
-  url, setUrl, stores, selectedStore, setSelectedStore, loading 
+export default function ProductForm({ 
+  url, setUrl, loading, onSubmit, 
+  collections, selectedCollections, setSelectedCollections,
+  markup, markupType, extraPercent, taxRate
 }) {
-  // ✅ Check karein ke kya user Shopify ke andar se aaya hai
-  const isEmbedded = new URLSearchParams(window.location.search).has('shop');
-  
-  // Agar embedded hai, toh dropdown hide kar dein
-  const showDropdown = !isEmbedded;
+  const handleCollectionToggle = (id) => {
+    if (selectedCollections.includes(id)) {
+      setSelectedCollections(selectedCollections.filter(cId => cId !== id));
+    } else {
+      setSelectedCollections([...selectedCollections, id]);
+    }
+  };
 
   return (
-    <div className="flex flex-col md:flex-row gap-4 w-full">
-      <div className="flex-1 relative group w-full">
-        <LinkIcon className="absolute left-4 top-3.5 w-5 h-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
-        <input
-          type="text"
-          placeholder="Paste Amazon Product URL here..."
-          className="w-full pl-12 pr-4 py-3.5 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white rounded-2xl focus:bg-white dark:focus:bg-gray-800 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all shadow-sm text-sm md:text-base"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          disabled={loading}
-        />
+    <div className="space-y-6 md:space-y-8 w-full">
+      <UrlStoreInput url={url} setUrl={setUrl} loading={loading} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6 w-full">
+        <PricingSummary markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate} />
+        <CollectionSelector collections={collections} selectedCollections={selectedCollections} onToggle={handleCollectionToggle} loading={loading} />
       </div>
-      
-      {/* ✅ Dropdown sirf tab dikhe jab embedded na ho */}
-      {showDropdown && (
-        <select 
-          className="w-full md:w-auto px-5 py-3.5 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-700 dark:text-gray-200 font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-sm text-sm md:text-base"
-          value={selectedStore}
-          onChange={(e) => setSelectedStore(e.target.value)}
-          disabled={loading}
-        >
-          {stores.map(store => (
-            <option key={store} value={store}>{store.split('.')[0]}</option>
-          ))}
-        </select>
-      )}
+
+      <SubmitButton onSubmit={onSubmit} loading={loading} />
     </div>
   );
 }

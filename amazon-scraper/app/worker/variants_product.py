@@ -9,6 +9,7 @@ async def process_multi_variant(store, main_data, clean_variants, user_markup, u
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
         product_data=shopify_payload, variants_raw=clean_variants,
         markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
+        store=store, db=db,
     )
 
     # ✅ 1. Check karein ke GraphQL level par koi error toh nahi

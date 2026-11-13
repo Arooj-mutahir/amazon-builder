@@ -1,6 +1,6 @@
 import asyncio
 from ..client import shopify_graphql
-from ..locations import get_primary_location, get_shopify_category_id, publish_product
+from ..locations import get_location_id_for_store, get_shopify_category_id, publish_product
 from ..metafields import _build_description_with_metafields
 
 from .stock_utils import _variant_stock, _resolve_parent_stock
@@ -11,11 +11,17 @@ from .media import _upload_media_and_get_id, _attach_variant_images
 # ============================================
 # CREATE SINGLE VARIANT PRODUCT
 # ============================================
-async def create_shopify_product(shop: str, access_token: str, product_data: dict) -> dict:
+async def create_shopify_product(shop: str, access_token: str, product_data: dict, store=None, db=None) -> dict:
     print(f'🛠️  Creating Single-Variant Product: {product_data.get("title")}', flush=True)
     
     try:
-        location_id = await get_primary_location(shop, access_token)
+        # ✅ Use cached location from DB if available, else fetch live
+        if store and db:
+            from ..locations import get_location_id_for_store
+            location_id = await get_location_id_for_store(store, db, access_token)
+        else:
+            from ..locations import get_primary_location
+            location_id = await get_primary_location(shop, access_token)
         amazon_categories = product_data.get('categories', []) or []
         shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories) if amazon_categories else None
         
@@ -174,14 +180,20 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
 # ============================================
 # CREATE MULTI-VARIANT PRODUCT
 # ============================================
-async def create_shopify_product_with_variants(shop, access_token, product_data, variants_raw, markup_val, markup_type, extra_percent, tax_rate) -> dict:
+async def create_shopify_product_with_variants(shop, access_token, product_data, variants_raw, markup_val, markup_type, extra_percent, tax_rate, store=None, db=None) -> dict:
     if not variants_raw:
-        return await create_shopify_product(shop, access_token, product_data)
+        return await create_shopify_product(shop, access_token, product_data, store=store, db=db)
         
     print(f'🛠️  Creating Multi-Variant Product: {len(variants_raw)} variants', flush=True)
     
     try:
-        location_id = await get_primary_location(shop, access_token)
+        # ✅ Use cached location from DB if available, else fetch live
+        if store and db:
+            from ..locations import get_location_id_for_store
+            location_id = await get_location_id_for_store(store, db, access_token)
+        else:
+            from ..locations import get_primary_location
+            location_id = await get_primary_location(shop, access_token)
         parent_stock_qty = _resolve_parent_stock(product_data, default_stock_qty=0)
         
         per_variant_options = []

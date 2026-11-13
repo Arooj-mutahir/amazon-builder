@@ -7,7 +7,7 @@ from app.services.shopify_auth import (
     refresh_shopify_token
 )
 from .client import shopify_graphql
-from .locations import get_primary_location, get_shopify_category_id, publish_product
+from .locations import get_primary_location, get_location_id_for_store, get_shopify_category_id, publish_product
 from .collections import fetch_all_collections, add_product_to_collections
 from .metafields import set_product_metafields_smart, _build_description_with_metafields
 from .products import (
