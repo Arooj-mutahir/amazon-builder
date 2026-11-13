@@ -24,8 +24,11 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  // ✅ Dynamic API URL (Railway ya localhost automatically handle hoga)
-  const API_URL = import.meta.env.VITE_API_URL || 'https://amazon-builder-production.up.railway.app/api/shopify';
+  // ✅ Dynamic API URLs
+  // Backend base URL (bina /api/shopify ke)
+  const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
+  // API URL (with /api/shopify)
+  const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
   // 1. Connected Stores Fetch Karein
   useEffect(() => {
@@ -68,9 +71,9 @@ export default function App() {
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
-      // ✅ Hardcoded URL hata kar dynamic kiya
-      const baseUrl = import.meta.env.VITE_API_URL || 'https://amazon-builder-production.up.railway.app';
-      window.location.href = `${baseUrl}/api/shopify/install?shop=${newShop}`;
+      // ✅ FIX: Double API URL ki problem solve ki
+      // Hum BACKEND_URL use kar rahe hain, taaki /api/shopify double na ho
+      window.location.href = `${BACKEND_URL}/api/shopify/install?shop=${newShop}`;
     }
   };
 
