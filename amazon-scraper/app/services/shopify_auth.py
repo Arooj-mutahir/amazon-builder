@@ -175,7 +175,7 @@ async def exchange_id_token_for_offline_token(
         "requested_token_type": (
             "urn:shopify:params:oauth:token-type:offline-access-token"
         ),
-        "expiring": "1",
+        # "expiring": "1",
     }
 
     try:
