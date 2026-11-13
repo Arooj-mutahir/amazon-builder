@@ -35,9 +35,14 @@ app.include_router(shopify_router, prefix="/api/shopify")
 
 @app.get("/")
 def read_root(request: Request):
-    # ✅ Agar Shopify se request aayi hai (URL mein hmac ya host hai), toh React app par bhejein
+    # ✅ If Shopify opens the app (has hmac or host param), serve the React app
+    # Pass ALL query params through so App Bridge gets ?shop=, ?hmac=, ?host= etc.
     if "hmac" in request.query_params or "host" in request.query_params:
-        return RedirectResponse(url="https://ingenious-caring-production-c9aed584.up.railway.app")
+        # Build query string to forward to frontend
+        qs = str(request.url.query)
+        frontend_url = "https://ingenious-caring-production-c9aed584.up.railway.app"
+        redirect_target = f"{frontend_url}?{qs}" if qs else frontend_url
+        return RedirectResponse(url=redirect_target)
     
     return {"status": "success", "message": "Scraper & Shopify Server is running!"}
 
