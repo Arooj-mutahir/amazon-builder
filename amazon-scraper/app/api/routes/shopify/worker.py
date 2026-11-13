@@ -6,7 +6,9 @@ from apscheduler.triggers.cron import CronTrigger
 from app.database import SessionLocal
 from app.models import ShopifyStore
 from app.services.amazon_bridge import get_shopify_product_data
-from app.worker.sync_job import sync_prices_job
+
+# ❌ REMOVED: from app.worker.sync_job import sync_prices_job (Top-level import hata diya)
+
 from app.worker.single_product import process_single_variant
 from app.worker.variants_product import process_multi_variant
 
@@ -122,10 +124,15 @@ async def _background_fetch_and_push(
 scheduler = AsyncIOScheduler()
 
 async def run_price_update_now():
+    # ✅ Lazy import yahan kiya taaki Circular Import na ho
+    from app.worker.sync_job import sync_prices_job
     print("⚡ [MANUAL TRIGGER] Price + Stock Sync Started...", flush=True)
     await sync_prices_job()
 
 def start_scheduler():
+    # ✅ Lazy import yahan kiya taaki Circular Import na ho
+    from app.worker.sync_job import sync_prices_job
+    
     scheduler.add_job(
         sync_prices_job,
         trigger=CronTrigger(hour=2, minute=0),

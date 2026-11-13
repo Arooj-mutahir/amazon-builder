@@ -5,7 +5,6 @@ from app.database import SessionLocal
 from app.models import Product, ShopifyStore
 from app.services.amazon_bridge import get_shopify_product_data
 from app.services.shopify import shopify_graphql, _set_inventory_quantities
-from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
 
 _location_cache = {}
@@ -14,7 +13,11 @@ async def _get_primary_location_cached(store, db):
     key = (store.shop_domain, store.id)
     if key in _location_cache:
         return _location_cache[key]
+    
+    # ✅ Lazy import to avoid circular dependency
     from app.services.shopify.locations import get_primary_location
+    from app.api.routes.shopify.helpers import _get_valid_access_token
+    
     token = await _get_valid_access_token(store, db)
     loc = await get_primary_location(store.shop_domain, token)
     _location_cache[key] = loc
@@ -22,6 +25,10 @@ async def _get_primary_location_cached(store, db):
 
 async def sync_prices_job():
     print("\n⏰ [CRON JOB] Starting Price + Stock Sync...", flush=True)
+    
+    # ✅ Lazy import to avoid circular dependency
+    from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
+    
     db = SessionLocal()
     try:
         products = db.query(Product).filter(
