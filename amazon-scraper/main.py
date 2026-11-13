@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 
+# ✅ Aapke app ke imports
 from app.api.routes.shopify import router as shopify_router
 from app.database import engine, Base
 from app import models 
@@ -29,14 +30,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ API Routes (Yeh pehle aayenge)
+# ✅ 1. API Routes (Hamesha pehle aayenge)
 app.include_router(shopify_router, prefix="/api/shopify")
 
 @app.get("/api/health")
 def health_check():
     return {"status": "success", "message": "API is running!"}
 
-# ✅ FRONTEND SERVING LOGIC
+# ✅ 2. FRONTEND SERVING LOGIC (React App)
 FRONTEND_BUILD_DIR = "dist" 
 
 if os.path.exists(FRONTEND_BUILD_DIR):
@@ -64,4 +65,4 @@ else:
         return {"status": "error", "message": "Frontend build missing. API is running."}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=False)
