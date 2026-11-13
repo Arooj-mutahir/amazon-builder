@@ -3,6 +3,12 @@ import { Link as LinkIcon } from 'lucide-react';
 export default function UrlStoreInput({ 
   url, setUrl, stores, selectedStore, setSelectedStore, loading 
 }) {
+  // ✅ Check karein ke kya user Shopify ke andar se aaya hai
+  const isEmbedded = new URLSearchParams(window.location.search).has('shop');
+  
+  // Agar embedded hai, toh dropdown hide kar dein
+  const showDropdown = !isEmbedded;
+
   return (
     <div className="flex flex-col md:flex-row gap-4 w-full">
       <div className="flex-1 relative group w-full">
@@ -17,19 +23,19 @@ export default function UrlStoreInput({
         />
       </div>
       
-      <select 
-        className="w-full md:w-auto px-5 py-3.5 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-700 dark:text-gray-200 font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-sm text-sm md:text-base"
-        value={selectedStore}
-        onChange={(e) => setSelectedStore(e.target.value)}
-        disabled={loading}
-      >
-        {stores.map((store) => (
-          // ✅ Yahan store.shop_domain use kiya hai
-          <option key={store.id || store.shop_domain} value={store.shop_domain}>
-            {store.shop_domain.split('.')[0]}
-          </option>
-        ))}
-      </select>
+      {/* ✅ Dropdown sirf tab dikhe jab embedded na ho */}
+      {showDropdown && (
+        <select 
+          className="w-full md:w-auto px-5 py-3.5 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-700 dark:text-gray-200 font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-sm text-sm md:text-base"
+          value={selectedStore}
+          onChange={(e) => setSelectedStore(e.target.value)}
+          disabled={loading}
+        >
+          {stores.map(store => (
+            <option key={store} value={store}>{store.split('.')[0]}</option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

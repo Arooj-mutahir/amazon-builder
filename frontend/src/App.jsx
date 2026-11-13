@@ -25,28 +25,21 @@ export default function App() {
 
   const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
-  // ✅ 1. URL se Shop Detect Karein (Hardcoding nahi)
   const getShopFromUrl = () => {
     const urlParams = new URLSearchParams(window.location.search);
-    // Shopify 'shop' parameter bhejta hai
     return urlParams.get('shop') || urlParams.get('shopify_shop') || null;
   };
 
-  // ✅ 2. Connected Stores Fetch aur Auto-Connect Logic
   useEffect(() => {
     const fetchStores = async () => {
       try {
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
         
-        // Pehle URL se shop nikaalne ki koshish karein
         const shopFromUrl = getShopFromUrl();
-        
         if (shopFromUrl) {
-          // Agar URL mein shop hai, toh usko select karein
           setSelectedStore(shopFromUrl);
         } else if (res.data.length > 0) {
-          // Agar URL mein nahi hai, toh database ka pehla store select karein
           setSelectedStore(res.data[0].shop_domain);
         }
       } catch (err) {
@@ -56,7 +49,6 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // 3. Jab Store Change ho toh uski Collections Fetch karein
   useEffect(() => {
     const fetchCollections = async () => {
       if (!selectedStore) return;
@@ -70,16 +62,11 @@ export default function App() {
     fetchCollections();
   }, [selectedStore, API_URL]);
 
-  // ✅ 4. Naya Store Connect Karne ka Function (Bina prompt ke)
   const handleConnectStore = () => {
-    // App Bridge ka use karke current shop nikaalein
-    // Agar App Bridge available nahi hai, toh fallback ke tor par window.location use karein
     const shopFromUrl = getShopFromUrl();
-    
     if (shopFromUrl) {
       window.location.href = `${window.location.origin}/api/shopify/install?shop=${shopFromUrl}`;
     } else {
-      // Agar shop nahi mili toh manual prompt (sirf edge case ke liye)
       const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
       if (newShop) {
         window.location.href = `${window.location.origin}/api/shopify/install?shop=${newShop}`;
@@ -128,6 +115,9 @@ export default function App() {
     setActiveTab('dashboard');
   };
 
+  // ✅ Banner sirf tab dikhayein jab user Shopify ke andar na ho
+  const isEmbedded = new URLSearchParams(window.location.search).has('shop');
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 transition-colors duration-300 flex flex-col items-center w-full overflow-x-hidden">
       
@@ -135,8 +125,8 @@ export default function App() {
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* ✅ Banner (Agar store select nahi hua toh dikhayein) */}
-        {activeTab === 'dashboard' && !selectedStore && (
+        {/* ✅ Banner hide kar dein agar embedded hai */}
+        {activeTab === 'dashboard' && !selectedStore && !isEmbedded && (
           <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
             <p>Connect a Shopify store to manage its products.</p>
             <button onClick={handleConnectStore} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition">

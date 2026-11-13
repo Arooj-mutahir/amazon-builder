@@ -10,7 +10,6 @@ export default function ProductForm({
   collections, selectedCollections, setSelectedCollections,
   markup, markupType, extraPercent, taxRate
 }) {
-  // Logic: Collection Toggle
   const handleCollectionToggle = (id) => {
     if (selectedCollections.includes(id)) {
       setSelectedCollections(selectedCollections.filter(cId => cId !== id));
