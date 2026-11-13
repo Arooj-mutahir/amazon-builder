@@ -12,7 +12,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   
-  // ✅ Stores ab dynamic hain (hardcoded nahi)
+  // ✅ Stores ab dynamic hain
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
   
@@ -24,7 +24,8 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/shopify';
+  // ✅ Dynamic API URL (Railway ya localhost automatically handle hoga)
+  const API_URL = import.meta.env.VITE_API_URL || 'https://amazon-builder-production.up.railway.app/api/shopify';
 
   // 1. Connected Stores Fetch Karein
   useEffect(() => {
@@ -32,8 +33,15 @@ export default function App() {
       try {
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
+        
         if (res.data.length > 0) {
-          setSelectedStore(res.data[0].shop_domain);
+          // ✅ URL se 'shop' param nikaalein (Shopify Admin se aata hai)
+          const urlParams = new URLSearchParams(window.location.search);
+          const shopFromUrl = urlParams.get('shop');
+          
+          // Agar URL mein shop hai, toh wahi select karein, warna default pehla store
+          const storeToSelect = shopFromUrl || res.data[0].shop_domain;
+          setSelectedStore(storeToSelect);
         }
       } catch (err) {
         console.error("Failed to fetch stores", err);
@@ -56,11 +64,13 @@ export default function App() {
     fetchCollections();
   }, [selectedStore, API_URL]);
 
-  // 3. Naya Store Connect Karne ka Function (Auto-Detect)
+  // 3. Naya Store Connect Karne ka Function
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
-      window.location.href = `https://amazon-builder-production.up.railway.app/api/shopify/install?shop=${newShop}`;
+      // ✅ Hardcoded URL hata kar dynamic kiya
+      const baseUrl = import.meta.env.VITE_API_URL || 'https://amazon-builder-production.up.railway.app';
+      window.location.href = `${baseUrl}/api/shopify/install?shop=${newShop}`;
     }
   };
 
@@ -112,7 +122,6 @@ export default function App() {
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* ✅ Hamesha Connect Store Button Dikhayein */}
         {activeTab === 'dashboard' && (
           <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
             <p>Connect a new Shopify store to manage its products.</p>
