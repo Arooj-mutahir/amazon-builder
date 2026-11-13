@@ -11,7 +11,12 @@ async def _get_valid_access_token(store: ShopifyStore, db: Session, force_refres
     buffer = timedelta(minutes=10)
     needs_refresh = force_refresh
     
-    if not needs_refresh and store.expires_at and store.expires_at <= now + buffer:
+    # ✅ FIX: Timezone-aware datetime handling
+    expires_at = store.expires_at
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if not needs_refresh and expires_at and expires_at <= now + buffer:
         needs_refresh = True
         
     if needs_refresh:
