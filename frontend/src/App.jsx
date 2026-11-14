@@ -15,7 +15,6 @@ export default function App() {
   
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
-  // ✅ NAYA: Selected Store ki ID track karne ke liye state
   const [selectedStoreId, setSelectedStoreId] = useState(null);
   
   const [markup, setMarkup] = useState(() => localStorage.getItem('global_markup') || '0');
@@ -29,7 +28,6 @@ export default function App() {
   const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
-  // ✅ URL ke hisaab se tab change karein (Shopify sidebar ke liye)
   useEffect(() => {
     const path = window.location.pathname;
     if (path.includes('settings')) {
@@ -41,7 +39,6 @@ export default function App() {
     }
   }, []);
 
-  // ✅ Stores fetch + Selected Store ID set
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -52,11 +49,10 @@ export default function App() {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
           
-          // ✅ Domain match karke store dhoondein, warna pehla store uthayein
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
           
           setSelectedStore(foundStore.shop_domain);
-          setSelectedStoreId(foundStore.id); // ✅ ID bhi set karein
+          setSelectedStoreId(foundStore.id);
         }
       } catch (err) {
         console.error("Failed to fetch stores", err);
@@ -65,7 +61,6 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // ✅ Collections fetch
   useEffect(() => {
     const fetchCollections = async () => {
       if (!selectedStore) return;
@@ -146,9 +141,8 @@ export default function App() {
             onConnectStore={handleConnectStore}
           />
         ) : activeTab === 'settings' ? (
-          <Settings onBack={handleBackFromSettings} />
+          <Settings onBack={handleBackFromSettings} shopDomain={selectedStore} />  // ✅ FIXED
         ) : (
-          // ✅ UPDATED: selectedStoreId prop pass karein
           <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
         )}
       </main>
