@@ -11,9 +11,7 @@ from app.models import ShopifyStore
 from app.services.shopify_auth import (
     build_auth_url, 
     exchange_code_for_token, 
-    verify_hmac,
-    verify_id_token,                     # ✅ Naya import App Bridge ke liye
-    exchange_id_token_for_offline_token  # ✅ Naya import Token Exchange ke liye
+    verify_hmac
 )
 from app.services.shopify.locations import get_primary_location
 from app.services.shopify.client import shopify_graphql
@@ -31,11 +29,12 @@ def shopify_install(shop: str = Query(...)):
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
     
+    # ✅ status_code=302 (Not 307) to allow Shopify App Bridge to work
     return RedirectResponse(url=build_auth_url(shop), status_code=302)
 
 
 # ============================================
-# 2. CALLBACK ROUTE (Custom OAuth - Legacy flow)
+# 2. CALLBACK ROUTE
 # ============================================
 @router.get("/callback")
 async def shopify_callback(
@@ -81,7 +80,7 @@ async def shopify_callback(
                 break
         except Exception as e:
             print(f"⚠️ Location attempt {attempt+1} failed for {shop}: {e}", flush=True)
-            await asyncio.sleep(1)
+            await asyncio.sleep(1) # Wait 1 sec before retrying
 
     # ── 4. Upsert ShopifyStore in DB ──
     existing = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
@@ -95,6 +94,7 @@ async def shopify_callback(
         if refresh_expires_in:
             existing.refresh_token_expires_at = now + timedelta(seconds=int(refresh_expires_in))
         
+        # Update location only if we found one (don't overwrite with None)
         if location_id:
             existing.shopify_location_id = location_id
             
@@ -114,6 +114,7 @@ async def shopify_callback(
         print(f"✅ New store saved: {shop}, location_id={location_id}", flush=True)
 
     # ── 5. Redirect back to the embedded app ──
+    # We MUST pass 'shop' and 'host' so Shopify App Bridge loads correctly
     host = request.query_params.get("host", "")
     params = f"shop={shop}"
     if host:
@@ -122,59 +123,5 @@ async def shopify_callback(
     redirect_url = f"{FRONTEND_URL}?{params}"
     print(f"🚀 Redirecting to frontend: {redirect_url}", flush=True)
     
+    # ✅ status_code=302
     return RedirectResponse(url=redirect_url, status_code=302)
-
-
-# ============================================
-# 3. NAYA ROUTE: App Bridge ID Token Exchange (Managed Flow)
-# ============================================
-@router.post("/token-exchange")
-async def token_exchange(request: Request, db: Session = Depends(get_db)):
-    """
-    Ye route frontend se App Bridge ka id_token leta hai,
-    usko verify karta hai, aur permanent access_token bana kar
-    database mein save karta hai.
-    """
-    data = await request.json()
-    id_token = data.get("id_token")
-    shop = data.get("shop")
-
-    print(f"🔑 Token exchange request received for: {shop}", flush=True)
-
-    # 1. ID Token verify karein (Security)
-    try:
-        verify_id_token(id_token) 
-    except Exception as e:
-        print(f"❌ ID Token verify fail: {e}", flush=True)
-        raise HTTPException(status_code=401, detail="Invalid ID Token")
-
-    # 2. ID Token ko Offline Access Token mein exchange karein
-    token_data = await exchange_id_token_for_offline_token(shop, id_token)
-    if not token_data or not token_data.get("access_token"):
-        print(f"❌ App Bridge Token exchange failed for {shop}", flush=True)
-        raise HTTPException(status_code=400, detail="Token exchange failed")
-
-    # 3. Database mein save karein
-    existing = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
-    now = datetime.now(timezone.utc)
-    
-    if existing:
-        existing.access_token = token_data["access_token"]
-        if token_data.get("refresh_token"): 
-            existing.refresh_token = token_data["refresh_token"]
-        if token_data.get("expires_in"): 
-            existing.expires_at = now + timedelta(seconds=int(token_data["expires_in"]))
-        db.commit()
-        print(f"✅ Existing store updated via token exchange: {shop}", flush=True)
-    else:
-        new_store = ShopifyStore(
-            shop_domain=shop,
-            access_token=token_data["access_token"],
-            refresh_token=token_data.get("refresh_token"),
-            expires_at=(now + timedelta(seconds=int(token_data["expires_in"]))) if token_data.get("expires_in") else None,
-        )
-        db.add(new_store)
-        db.commit()
-        print(f"✅ New store saved via token exchange: {shop}", flush=True)
-    
-    return {"status": "success"}

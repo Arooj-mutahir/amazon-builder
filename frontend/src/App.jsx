@@ -4,14 +4,7 @@ import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
 
-// ✅ App Bridge Imports
-import { useAppBridge } from '@shopify/app-bridge-react';
-import { getSessionToken } from '@shopify/app-bridge/utilities';
-
 export default function App() {
-  // ✅ App Bridge Instance
-  const app = useAppBridge();
-
   const [activeTab, setActiveTab] = useState('dashboard'); 
   
   const [url, setUrl] = useState('');
@@ -32,38 +25,12 @@ export default function App() {
   const [selectedCollections, setSelectedCollections] = useState([]);
 
   // ✅ Dynamic API URLs
+  // Backend base URL (bina /api/shopify ke)
   const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
+  // API URL (with /api/shopify)
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
-  // ============================================
-  // ✅ 1. App Bridge se ID Token lein aur Backend bhejein
-  // ============================================
-  useEffect(() => {
-    const exchangeToken = async () => {
-      try {
-        const token = await getSessionToken(app);
-        const params = new URLSearchParams(window.location.search);
-        const shop = params.get('shop');
-
-        if (token && shop) {
-          console.log("🔄 Sending ID Token to backend for exchange...");
-          await axios.post(`${API_URL}/token-exchange`, {
-            id_token: token,
-            shop: shop
-          });
-          console.log("✅ Token exchanged successfully!");
-        }
-      } catch (err) {
-        console.error("❌ App Bridge Token Exchange failed:", err);
-      }
-    };
-
-    exchangeToken();
-  }, [app, API_URL]);
-
-  // ============================================
-  // 2. Connected Stores Fetch Karein
-  // ============================================
+  // 1. Connected Stores Fetch Karein
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -71,9 +38,11 @@ export default function App() {
         setStores(res.data);
         
         if (res.data.length > 0) {
+          // ✅ URL se 'shop' param nikaalein (Shopify Admin se aata hai)
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
           
+          // Agar URL mein shop hai, toh wahi select karein, warna default pehla store
           const storeToSelect = shopFromUrl || res.data[0].shop_domain;
           setSelectedStore(storeToSelect);
         }
@@ -84,9 +53,7 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // ============================================
-  // 3. Jab Store Change ho toh uski Collections Fetch karein
-  // ============================================
+  // 2. Jab Store Change ho toh uski Collections Fetch karein
   useEffect(() => {
     const fetchCollections = async () => {
       if (!selectedStore) return;
@@ -100,12 +67,12 @@ export default function App() {
     fetchCollections();
   }, [selectedStore, API_URL]);
 
-  // ============================================
-  // 4. Naya Store Connect Karne ka Function
-  // ============================================
+  // 3. Naya Store Connect Karne ka Function
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
+      // ✅ FIX: Double API URL ki problem solve ki
+      // Hum BACKEND_URL use kar rahe hain, taaki /api/shopify double na ho
       window.location.href = `${BACKEND_URL}/api/shopify/install?shop=${newShop}`;
     }
   };
