@@ -3,7 +3,7 @@ import axios from 'axios';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
-import { LayoutDashboard, Settings as SettingsIcon } from 'lucide-react'; 
+import { LayoutDashboard, Settings as SettingsIcon } from 'lucide-react'; // ✅ Icons import karein
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -110,12 +110,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 transition-colors duration-300 flex flex-col items-center w-full overflow-x-hidden">
       
+      {/* Header mein ab koi activeTab prop nahi jayega, isliye Header.js ko bhi update karna hoga */}
       <Header />
 
-      {/* ✅ NAYA LAYOUT: Sidebar aur Main Content */}
       <div className="w-full max-w-6xl mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* Left Sidebar (Shopify jaisa) */}
+        {/* ✅ Left Sidebar (Shopify jaisa menu) */}
         <div className="w-full md:w-64 flex-shrink-0">
           <div className="bg-white/70 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 p-3 shadow-sm sticky top-24">
             <nav className="flex flex-col gap-1">
@@ -135,7 +135,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Main Content */}
+        {/* ✅ Right Main Content */}
         <div className="flex-1 w-full">
           {activeTab === 'dashboard' && stores.length === 0 && (
             <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
