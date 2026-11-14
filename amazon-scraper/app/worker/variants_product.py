@@ -8,37 +8,33 @@ async def process_multi_variant(
     store, main_data, clean_variants, user_markup, user_markup_type, 
     user_extra, user_tax, final_tags, extracted_categories, shopify_payload, 
     shop_domain, collection_ids, db, default_stock_qty,
-    compare_price_markup: float = 0.0  # ✅ NAYA PARAMETER
+    compare_price_markup: float = 0.0
 ):
     
-    # ✅ Compare Price calculate karein (agar markup > 0 hai)
+    # ✅ Compare Price calculate karein
     compare_price = None
     if compare_price_markup > 0:
         final_price = shopify_payload.get("price", 0.0)
         compare_price = final_price * (1 + (compare_price_markup / 100.0))
         print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
-        # ✅ shopify_payload mein add karein taaki Shopify ko jaye
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ FIX: compare_price_markup argument hata diya (error fix)
+    # ✅ Shopify par product create karein
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
         product_data=shopify_payload, variants_raw=clean_variants,
         markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
     )
 
-    # ✅ 1. Check karein ke GraphQL level par koi error toh nahi
     if not result or "errors" in result:
         print(f"❌ Shopify GraphQL Error: {result.get('errors')}", flush=True)
         return
 
-    # ✅ 2. productCreate ke userErrors check karein
     user_errors = result.get("data", {}).get("productCreate", {}).get("userErrors", [])
     if user_errors:
         print(f"❌ Product Creation User Errors: {user_errors}", flush=True)
         return
 
-    # ✅ 3. productCreate se product ID nikaalein
     shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
     if not shopify_id:
         print(f"❌ No product ID returned from Shopify!", flush=True)
@@ -46,16 +42,84 @@ async def process_multi_variant(
 
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
+    # ==========================================
+    # ✅ NAYA: PARENT PRODUCT KO DATABASE MEIN SAVE KAREIN
+    # ==========================================
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
-    if new_product:
-        new_product.shopify_product_id = shopify_id
-        db.commit()
+    # Parent ki availability aur stock calculate karein
+    parent_available = _get_availability(main_data)
+    parent_stock_raw = main_data.get("stock_qty")
+    parent_stock_qty = _resolve_stock(parent_available, parent_stock_raw, default_stock_qty)
+    parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
+    parent_stock = parent_stock_qty or 0
+    availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
+    if not new_product:
+        # Parent Product database mein nahi hai, toh create karein
+        new_product = Product(
+            asin=main_data["asin"], 
+            parent_asin=main_data.get("parent_asin"), 
+            is_variation=False,
+            title=main_data.get("title"), 
+            brand=main_data.get("brand"), 
+            description=main_data.get("description", ""),
+            image_url=(main_data.get("images") or [None])[0], 
+            images=main_data.get("images") or [],
+            rating=main_data.get("rating"), 
+            reviews_count=main_data.get("reviews_count"),
+            availability=availability_str, 
+            is_available=parent_in_stock, 
+            stock_quantity=parent_stock,
+            amazon_price=main_data.get("price"), 
+            price=shopify_payload["price"], 
+            markup=user_markup, 
+            markup_type=user_markup_type, 
+            extra_percent=user_extra, 
+            tax_rate=user_tax,
+            variant_attributes=main_data.get("variant_attributes") or [], 
+            categories=extracted_categories,
+            tags=final_tags, 
+            shopify_store_id=store.id, 
+            shopify_status="active",
+            shopify_product_id=shopify_id
+        )
+        db.add(new_product)
+        print(f"✅ Parent product created in DB: {main_data['asin']}", flush=True)
+    else:
+        # Parent Product pehle se hai, toh details update karein
+        new_product.shopify_product_id = shopify_id
+        new_product.shopify_store_id = store.id
+        new_product.price = shopify_payload["price"]
+        new_product.amazon_price = main_data.get("price")
+        new_product.title = main_data.get("title")
+        new_product.brand = main_data.get("brand")
+        new_product.description = main_data.get("description", "")
+        new_product.image_url = (main_data.get("images") or [None])[0]
+        new_product.images = main_data.get("images") or []
+        new_product.rating = main_data.get("rating")
+        new_product.reviews_count = main_data.get("reviews_count")
+        new_product.availability = availability_str
+        new_product.is_available = parent_in_stock
+        new_product.stock_quantity = parent_stock
+        new_product.markup = user_markup
+        new_product.markup_type = user_markup_type
+        new_product.extra_percent = user_extra
+        new_product.tax_rate = user_tax
+        new_product.categories = extracted_categories
+        new_product.tags = final_tags
+        print(f"✅ Parent product updated in DB: {main_data['asin']}", flush=True)
+        
+    db.commit()
+
+    # ==========================================
+    # ✅ CHILD PRODUCTS KO DATABASE MEIN SAVE KAREIN
+    # ==========================================
     try:
         saved_variants_count = 0
         for v in clean_variants:
             v_asin = v.get("asin")
+            # Parent ASIN ko skip karein, sirf child save karein
             if not v_asin or v_asin == main_data.get("asin"):
                 continue
 
@@ -85,6 +149,10 @@ async def process_multi_variant(
                 child_existing.stock_quantity = int(v_resolved)
                 child_existing.is_available = v_in_stock
                 child_existing.availability = v_avail
+                child_existing.markup = user_markup
+                child_existing.markup_type = user_markup_type
+                child_existing.extra_percent = user_extra
+                child_existing.tax_rate = user_tax
             else:
                 child_product = Product(
                     asin=v_asin, parent_asin=main_data.get("asin") or main_data.get("parent_asin"), is_variation=True,
@@ -107,6 +175,7 @@ async def process_multi_variant(
     except Exception as e:
         print(f"⚠️ Failed to parse variant response: {e}", flush=True)
 
+    # Publish product
     try:
         token = await _get_valid_access_token(store, db)
         await publish_product(shop_domain, token, shopify_id)
