@@ -3,7 +3,6 @@ import axios from 'axios';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
-import { LayoutDashboard, Settings as SettingsIcon } from 'lucide-react'; // ✅ Icons import karein
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -26,6 +25,16 @@ export default function App() {
 
   const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
+
+  // ✅ NAYA: URL ke hisaab se tab change karein (Shopify sidebar ke liye)
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.includes('settings')) {
+      setActiveTab('settings');
+    } else {
+      setActiveTab('dashboard');
+    }
+  }, []);
 
   useEffect(() => {
     const fetchStores = async () => {
@@ -105,62 +114,39 @@ export default function App() {
     setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setActiveTab('dashboard');
+    window.history.pushState({}, '', '/'); // ✅ URL ko wapas dashboard par le jayein
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 transition-colors duration-300 flex flex-col items-center w-full overflow-x-hidden">
       
-      {/* Header mein ab koi activeTab prop nahi jayega, isliye Header.js ko bhi update karna hoga */}
-      <Header />
+      <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <div className="w-full max-w-6xl mx-auto flex flex-col md:flex-row gap-6 p-4 md:p-6 mt-4 md:mt-6">
+      <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* ✅ Left Sidebar (Shopify jaisa menu) */}
-        <div className="w-full md:w-64 flex-shrink-0">
-          <div className="bg-white/70 dark:bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-gray-200/50 dark:border-gray-700/50 p-3 shadow-sm sticky top-24">
-            <nav className="flex flex-col gap-1">
-              <button 
-                onClick={() => setActiveTab('dashboard')}
-                className={`flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-              >
-                <LayoutDashboard className="w-5 h-5" /> Dashboard
-              </button>
-              <button 
-                onClick={() => setActiveTab('settings')}
-                className={`flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold rounded-xl transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-              >
-                <SettingsIcon className="w-5 h-5" /> Settings
-              </button>
-            </nav>
+        {activeTab === 'dashboard' && stores.length === 0 && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
+            <p>Connect a new Shopify store to manage its products.</p>
+            <button onClick={handleConnectStore} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition">
+              + Connect New Store
+            </button>
           </div>
-        </div>
+        )}
 
-        {/* ✅ Right Main Content */}
-        <div className="flex-1 w-full">
-          {activeTab === 'dashboard' && stores.length === 0 && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
-              <p>Connect a new Shopify store to manage its products.</p>
-              <button onClick={handleConnectStore} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition">
-                + Connect New Store
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'dashboard' ? (
-            <DashboardView 
-              url={url} setUrl={setUrl}
-              loading={loading} onSubmit={handlePushToShopify}
-              stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-              collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-              markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-              error={error} successMsg={successMsg}
-              onConnectStore={handleConnectStore}
-            />
-          ) : (
-            <Settings onBack={handleBackFromSettings} />
-          )}
-        </div>
-      </div>
+        {activeTab === 'dashboard' ? (
+          <DashboardView 
+            url={url} setUrl={setUrl}
+            loading={loading} onSubmit={handlePushToShopify}
+            stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
+            collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
+            markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+            error={error} successMsg={successMsg}
+            onConnectStore={handleConnectStore}
+          />
+        ) : (
+          <Settings onBack={handleBackFromSettings} />
+        )}
+      </main>
 
     </div>
   );
