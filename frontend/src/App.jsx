@@ -26,7 +26,7 @@ export default function App() {
   const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
-  // ✅ NAYA: URL ke hisaab se tab change karein (Shopify sidebar ke liye)
+  // ✅ URL ke hisaab se tab change karein (Shopify sidebar ke liye)
   useEffect(() => {
     const path = window.location.pathname;
     if (path.includes('settings')) {
@@ -114,13 +114,14 @@ export default function App() {
     setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setActiveTab('dashboard');
-    window.history.pushState({}, '', '/'); // ✅ URL ko wapas dashboard par le jayein
+    window.history.pushState({}, '', '/'); 
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 transition-colors duration-300 flex flex-col items-center w-full overflow-x-hidden">
       
-      <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+      {/* ✅ FIX: Header ab bina props ke call ho raha hai */}
+      <Header />
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
