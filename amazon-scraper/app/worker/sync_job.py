@@ -78,9 +78,12 @@ async def sync_prices_job(store_id: int = None):
                 store_extra = float(store.default_extra_percent if store.default_extra_percent is not None else 0.0)
                 store_tax = float(store.default_tax_rate if store.default_tax_rate is not None else 0.0)
                 default_stock = int(getattr(store, "default_stock_qty", 0) or 0)
+                
+                # ✅ NAYA: Compare Price Markup store se uthayein
+                store_compare_markup = float(getattr(store, "default_compare_price_markup", 0.0) or 0.0)
 
                 markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
-                print(f"   ⚙️  UI Settings (Store #{store.id}): Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}%", flush=True)
+                print(f"   ⚙️  UI Settings (Store #{store.id}): Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}% | Compare={store_compare_markup}%", flush=True)
 
                 # ✅ FIX 2: Child products ko bhi handle karein
                 child_products = []
@@ -210,7 +213,21 @@ async def sync_prices_job(store_id: int = None):
                 for prod in all_products:
                     fresh_v_id = fresh_variant_map.get(prod.asin)
                     if fresh_v_id and prod.price:
-                        price_updates.append({"id": fresh_v_id, "price": f"{prod.price:.2f}"})
+                        # ✅ NAYA: Compare Price calculate karein
+                        update_payload = {
+                            "id": fresh_v_id, 
+                            "price": f"{prod.price:.2f}"
+                        }
+                        
+                        # Agar user ne compare markup > 0 set kiya hai toh compareAtPrice add karein
+                        if store_compare_markup > 0:
+                            compare_price = prod.price * (1 + (store_compare_markup / 100.0))
+                            update_payload["compareAtPrice"] = f"{compare_price:.2f}"
+                        else:
+                            # Agar markup 0 hai, toh compareAtPrice null kar dein taaki Shopify se hata jaye
+                            update_payload["compareAtPrice"] = None
+                            
+                        price_updates.append(update_payload)
 
                     inv_id = fresh_inventory_map.get(prod.asin)
                     if inv_id and inv_id not in updated_inv_ids:
@@ -225,10 +242,11 @@ async def sync_prices_job(store_id: int = None):
                             updated_inv_ids.add(inv_id)
 
                 if shopify_product_id and price_updates:
+                    # ✅ UPDATED MUTATION: compareAtPrice field add ki gayi hai response mein
                     price_mutation = """
                     mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
                       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-                        productVariants { id price } userErrors { field message }
+                        productVariants { id price compareAtPrice } userErrors { field message }
                       }
                     }
                     """

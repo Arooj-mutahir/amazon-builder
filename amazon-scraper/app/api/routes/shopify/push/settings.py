@@ -30,6 +30,9 @@ async def save_store_settings(settings: StoreSettings, db: Session = Depends(get
         
     store.default_tax_rate = settings.tax_rate if settings.tax_rate is not None else 0.0
     
+    # ✅ NAYA: Compare Price Markup save karein
+    store.default_compare_price_markup = settings.compare_price_markup if settings.compare_price_markup is not None else 0.0
+    
     if settings.default_stock_qty is not None:
         store.default_stock_qty = int(settings.default_stock_qty)
     if settings.shopify_location_id is not None:
@@ -52,4 +55,5 @@ async def get_store_settings(shop_domain: str, db: Session = Depends(get_db)):
         "tax_rate": store.default_tax_rate or 0.0,
         "default_stock_qty": store.default_stock_qty or 0,
         "shopify_location_id": store.shopify_location_id,
+        "compare_price_markup": store.default_compare_price_markup or 0.0,  # ✅ NAYA: Frontend ko return karein
     }

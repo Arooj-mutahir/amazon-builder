@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios'; 
-import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles } from 'lucide-react';
+import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles, TrendingUp } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
@@ -10,6 +10,10 @@ export default function Settings({ onBack, storeId }) {
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(localStorage.getItem('global_extra_percent') || '0');
   const [taxRate, setTaxRate] = useState(localStorage.getItem('global_tax_rate') || '0');
+  
+  // ✅ NAYA: Compare Price Markup State
+  const [comparePriceMarkup, setComparePriceMarkup] = useState(localStorage.getItem('global_compare_markup') || '0');
+  
   const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
@@ -24,6 +28,9 @@ export default function Settings({ onBack, storeId }) {
     localStorage.setItem('global_markup_type', markupType);
     localStorage.setItem('global_extra_percent', finalExtraPercent.toString());
     localStorage.setItem('global_tax_rate', taxRate);
+    
+    // ✅ NAYA: LocalStorage mein compare markup save karein
+    localStorage.setItem('global_compare_markup', comparePriceMarkup);
 
     try {
       // ✅ store_id bhejein
@@ -32,7 +39,8 @@ export default function Settings({ onBack, storeId }) {
         markup: parseFloat(markup || 0),
         markup_type: markupType,
         extra_percent: finalExtraPercent,
-        tax_rate: parseFloat(taxRate || 0)
+        tax_rate: parseFloat(taxRate || 0),
+        compare_price_markup: parseFloat(comparePriceMarkup || 0) // ✅ Naya field backend ko bhejein
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -122,6 +130,23 @@ export default function Settings({ onBack, storeId }) {
             onChange={(e) => setTaxRate(e.target.value)}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-medium">This tax will be added on top of the final calculated price.</p>
+        </div>
+
+        {/* ✅ NAYA: Compare at Price Section */}
+        <div className="md:col-span-2 pt-4 border-t border-gray-100 dark:border-gray-800">
+          <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2.5 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-pink-500" /> Compare at Price Markup (%)
+          </label>
+          <input
+            type="number"
+            className="w-full px-5 py-3.5 bg-pink-50/30 dark:bg-gray-800 border border-pink-100 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white font-medium focus:bg-white dark:focus:bg-gray-800 focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500 outline-none transition-all"
+            value={comparePriceMarkup}
+            onChange={(e) => setComparePriceMarkup(e.target.value)}
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-medium">
+            Shopify par "Compare at Price" is percentage se zyada hoga (taaki customer ko discount dikhe). 
+            Example: Final Price $100 + 20% = Compare Price $120.
+          </p>
         </div>
       </div>
 

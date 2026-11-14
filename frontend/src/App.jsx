@@ -21,6 +21,9 @@ export default function App() {
   const [markupType, setMarkupType] = useState(() => localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(() => localStorage.getItem('global_extra_percent') || '0');
   const [taxRate, setTaxRate] = useState(() => localStorage.getItem('global_tax_rate') || '0');
+  
+  // ✅ NAYA: Compare Price Markup State
+  const [comparePriceMarkup, setComparePriceMarkup] = useState(() => localStorage.getItem('global_compare_markup') || '0');
 
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
@@ -97,6 +100,7 @@ export default function App() {
         markup_type: markupType,
         extra_percent: parseFloat(extraPercent),
         tax_rate: parseFloat(taxRate),
+        compare_price_markup: parseFloat(comparePriceMarkup), // ✅ Naya field backend ko bhejein
         collection_ids: selectedCollections
       });
 
@@ -119,6 +123,7 @@ export default function App() {
     setMarkupType(localStorage.getItem('global_markup_type') || 'percent');
     setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
+    setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0'); // ✅ Settings se wapas aate waqt update karein
     setActiveTab('dashboard');
     window.history.pushState({}, '', '/'); 
   };
@@ -141,7 +146,6 @@ export default function App() {
             onConnectStore={handleConnectStore}
           />
         ) : activeTab === 'settings' ? (
-          // ✅ FIX: storeId pass kiya
           <Settings onBack={handleBackFromSettings} storeId={selectedStoreId} />
         ) : (
           <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
