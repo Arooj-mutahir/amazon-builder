@@ -32,7 +32,7 @@ export default function App() {
     const path = window.location.pathname;
     if (path.includes('settings')) {
       setActiveTab('settings');
-    } else if (path.includes('manual-sync')) {
+    } else if (path.includes('manual-sync')) {  // ✅ Manual Sync ka URL check
       setActiveTab('manual-sync');
     } else {
       setActiveTab('dashboard');
@@ -142,7 +142,7 @@ export default function App() {
         ) : activeTab === 'settings' ? (
           <Settings onBack={handleBackFromSettings} />
         ) : (
-          <ManualSync API_URL={API_URL} selectedStore={selectedStore} />  // ✅ selectedStore pass kiya
+          <ManualSync API_URL={API_URL} />  // ✅ Naya Page render
         )}
       </main>
 

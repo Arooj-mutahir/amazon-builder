@@ -43,42 +43,21 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
     return fallback_location
 
 
-# ✅ FIX: shop_domain parameter add kiya
-async def sync_prices_job(shop_domain: str = None):
-    print(f"\n⏰ [CRON JOB] Starting Price + Stock Sync for {shop_domain or 'ALL Stores'}...", flush=True)
+async def sync_prices_job():
+    print("\n⏰ [CRON JOB] Starting Price + Stock Sync...", flush=True)
     
     from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
     
     db = SessionLocal()
     try:
-        # ✅ Store filter logic
-        query = db.query(Product).filter(Product.shopify_product_id.isnot(None))
-        
-        if shop_domain:
-            store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop_domain).first()
-            if not store:
-                print(f"❌ Store {shop_domain} not found in DB.", flush=True)
-                return
-            query = query.filter(Product.shopify_store_id == store.id)
-        
-        products = query.all()
-        print(f"🔍 Found {len(products)} products with Shopify IDs to check for {shop_domain or 'ALL'}.\n", flush=True)
-
-        # ✅ Duplicate scraping rokne ke liye set
-        processed_parent_asins = set()
+        # ✅ FIX 1: Saare products uthayein jinke paas Shopify ID hai (Parent ya Child)
+        products = db.query(Product).filter(
+            Product.shopify_product_id.isnot(None)
+        ).all()
+        print(f"🔍 Found {len(products)} products with Shopify IDs to check.\n", flush=True)
 
         for product in products:
             try:
-                # ✅ Skip agar parent already process ho chuka hai
-                if product.is_variation and product.parent_asin in processed_parent_asins:
-                    print(f"   ⏭️ Skipping child ASIN {product.asin} (Parent {product.parent_asin} already processed)", flush=True)
-                    continue
-
-                if not product.is_variation:
-                    processed_parent_asins.add(product.asin)
-                elif product.parent_asin:
-                    processed_parent_asins.add(product.parent_asin)
-
                 store = db.query(ShopifyStore).filter(ShopifyStore.id == product.shopify_store_id).first()
                 if not store:
                     continue
@@ -95,6 +74,7 @@ async def sync_prices_job(shop_domain: str = None):
                 markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
                 print(f"   ⚙️  UI Settings (Store #{store.id}): Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}%", flush=True)
 
+                # ✅ FIX 2: Child products ko bhi handle karein
                 child_products = []
                 if not product.is_variation:
                     child_products = db.query(Product).filter(
@@ -105,6 +85,7 @@ async def sync_prices_job(shop_domain: str = None):
                 all_products = [product] + child_products
                 print(f"   📦 Total variants to sync: {len(all_products)}", flush=True)
 
+                # ✅ FIX 3: Agar product child hai, toh uske parent ka ASIN use karke scrape karein
                 asin_to_scrape = product.parent_asin if product.is_variation and product.parent_asin else product.asin
 
                 scrape_timeout = max(60.0, float(len(child_products) * 3.5 + 30.0))
@@ -171,7 +152,7 @@ async def sync_prices_job(shop_domain: str = None):
                 token = await _get_valid_access_token(store, db)
                 shopify_product_id = product.shopify_product_id
                 if shopify_product_id and not str(shopify_product_id).startswith("gid://shopify/"):
-                    shopify_product_id = f"gid://Shopify/Product/{shopify_product_id}"
+                    shopify_product_id = f"gid://shopify/Product/{shopify_product_id}"
 
                 fresh_variant_map = {}
                 fresh_inventory_map = {}
