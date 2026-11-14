@@ -47,7 +47,7 @@ def read_root(request: Request):
             params["host"] = request.query_params["host"]
             
         qs = urlencode(params)
-        frontend_url = "https://amazon-builder-production.up.railway.app"
+        frontend_url = "https://ingenious-caring-production-c9aed584.up.railway.app"
         redirect_target = f"{frontend_url}?{qs}" if qs else frontend_url
         
         # 🚨 302 lagana zaroori hai taaki white screen na aaye
