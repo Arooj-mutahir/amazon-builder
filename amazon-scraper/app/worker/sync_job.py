@@ -22,7 +22,6 @@ async def _get_primary_location_cached(store, db):
     _location_cache[key] = loc
     return loc
 
-# ✅ NAYA: Har product ka actual location fetch karne ke liye
 async def _get_product_actual_location(store, token, inventory_item_id, fallback_location):
     query = """
     query getItemLocations($id: ID!) {
@@ -51,11 +50,11 @@ async def sync_prices_job():
     
     db = SessionLocal()
     try:
+        # ✅ FIX 1: Saare products uthayein jinke paas Shopify ID hai (Parent ya Child)
         products = db.query(Product).filter(
-            Product.shopify_product_id.isnot(None),
-            Product.is_variation == False
+            Product.shopify_product_id.isnot(None)
         ).all()
-        print(f"🔍 Found {len(products)} parent products to check.\n", flush=True)
+        print(f"🔍 Found {len(products)} products with Shopify IDs to check.\n", flush=True)
 
         for product in products:
             try:
@@ -64,7 +63,7 @@ async def sync_prices_job():
                     continue
 
                 print(f"=======================================================", flush=True)
-                print(f"🔎 Checking Parent ASIN: {product.asin} (Shopify ID: {product.shopify_product_id})", flush=True)
+                print(f"🔎 Checking ASIN: {product.asin} (Shopify ID: {product.shopify_product_id})", flush=True)
 
                 store_markup = float(store.default_markup if store.default_markup is not None else 0.0)
                 store_markup_type = str(store.default_markup_type or "fixed").lower()
@@ -75,29 +74,35 @@ async def sync_prices_job():
                 markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
                 print(f"   ⚙️  UI Settings (Store #{store.id}): Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}%", flush=True)
 
-                child_products = db.query(Product).filter(
-                    Product.parent_asin == product.asin,
-                    Product.is_variation == True
-                ).all()
+                # ✅ FIX 2: Child products ko bhi handle karein
+                child_products = []
+                if not product.is_variation:
+                    child_products = db.query(Product).filter(
+                        Product.parent_asin == product.asin,
+                        Product.is_variation == True
+                    ).all()
+                
                 all_products = [product] + child_products
-                print(f"   📦 Total variants to sync: {len(all_products)} (1 Parent + {len(child_products)} Children)", flush=True)
+                print(f"   📦 Total variants to sync: {len(all_products)}", flush=True)
+
+                # ✅ FIX 3: Agar product child hai, toh uske parent ka ASIN use karke scrape karein
+                asin_to_scrape = product.parent_asin if product.is_variation and product.parent_asin else product.asin
 
                 scrape_timeout = max(60.0, float(len(child_products) * 3.5 + 30.0))
                 try:
                     latest_data = await asyncio.wait_for(
-                        get_shopify_product_data(product.asin, default_stock_qty=default_stock, fetch_all_variants=True),
+                        get_shopify_product_data(asin_to_scrape, default_stock_qty=default_stock, fetch_all_variants=True),
                         timeout=scrape_timeout
                     )
                 except asyncio.TimeoutError:
-                    print(f"   ⏳ Timeout ({scrape_timeout:.0f}s) fetching Amazon data for {product.asin}, skipping...", flush=True)
+                    print(f"   ⏳ Timeout ({scrape_timeout:.0f}s) fetching Amazon data for {asin_to_scrape}, skipping...", flush=True)
                     continue
                 except Exception as e:
-                    print(f"   ⚠️ Scrape failed for {product.asin}: {e}", flush=True)
+                    print(f"   ⚠️ Scrape failed for {asin_to_scrape}: {e}", flush=True)
                     continue
 
                 latest_amazon_price = float(latest_data.get("price") or 0.0)
                 
-                # ✅ FIX 1: Agar price 0 hai toh skip karein (Shopify par 0 na chala jaye)
                 if latest_amazon_price <= 0:
                     print(f"   ⏭️ Skipping {product.asin} (Amazon Price is $0.00 or unavailable)", flush=True)
                     continue
@@ -192,7 +197,6 @@ async def sync_prices_job():
                 stock_updates = []
                 updated_inv_ids = set()
                 
-                # Store ka default location (fallback)
                 default_location_id = getattr(store, "shopify_location_id", None) or await _get_primary_location_cached(store, db)
 
                 for prod in all_products:
@@ -202,7 +206,6 @@ async def sync_prices_job():
 
                     inv_id = fresh_inventory_map.get(prod.asin)
                     if inv_id and inv_id not in updated_inv_ids:
-                        # ✅ FIX 2: Product ka ACTUAL location fetch karein
                         actual_loc_id = await _get_product_actual_location(store, token, inv_id, default_location_id)
                         
                         if actual_loc_id:
