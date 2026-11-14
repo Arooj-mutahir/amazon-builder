@@ -4,7 +4,7 @@ import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles } from 'lucide-
 
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
-// ✅ shopDomain ki jagah storeId receive karein
+// ✅ storeId prop receive karein
 export default function Settings({ onBack, storeId }) {
   const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
@@ -13,18 +13,22 @@ export default function Settings({ onBack, storeId }) {
   const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
+    if (!storeId) {
+      alert("No store connected. Please reload the app.");
+      return;
+    }
+
     const finalExtraPercent = markupType === 'both' ? parseFloat(extraPercent || 0) : 0;
 
-    // 1. LocalStorage update karo
     localStorage.setItem('global_markup', markup);
     localStorage.setItem('global_markup_type', markupType);
     localStorage.setItem('global_extra_percent', finalExtraPercent.toString());
     localStorage.setItem('global_tax_rate', taxRate);
 
-    // 2. Database update karo
     try {
+      // ✅ store_id bhejein
       await axios.post(`${API_URL}/app/save-settings`, {
-        store_id: storeId,  // ✅ Ab store_id bhejenge
+        store_id: storeId,
         markup: parseFloat(markup || 0),
         markup_type: markupType,
         extra_percent: finalExtraPercent,
