@@ -3,18 +3,27 @@ import { useState } from 'react';
 import axios from 'axios';
 import { RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 
-export default function ManualSync({ API_URL }) {
+// ✅ Props mein selectedStore receive karein
+export default function ManualSync({ API_URL, selectedStore }) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
   const handleSync = async () => {
+    if (!selectedStore) {
+      setError("No store connected. Please connect a store first.");
+      return;
+    }
+
     setLoading(true);
     setSuccess('');
     setError('');
 
     try {
-      const res = await axios.post(`${API_URL}/trigger-sync`);
+      // ✅ API call mein shop bhejein
+      const res = await axios.post(`${API_URL}/trigger-sync`, { 
+        shop: selectedStore 
+      });
       setSuccess(res.data.message || 'Sync started successfully! Check backend logs.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to start sync.');
@@ -31,14 +40,14 @@ export default function ManualSync({ API_URL }) {
       </div>
 
       <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white mb-2">Manual Price & Inventory Sync</h2>
-      <p className="text-gray-500 dark:text-gray-400 mb-8 text-sm md:text-base">
-        Click the button below to instantly fetch the latest prices and stock from Amazon and update your Shopify store. (Bypasses the 2 AM cron job).
+      <p className="text-gray-500 dark:text-gray-400 mb-2 text-sm md:text-base">
+        Update prices and stock for: <span className="font-bold text-blue-600">{selectedStore || 'No store selected'}</span>
       </p>
-
+      
       <button
         onClick={handleSync}
-        disabled={loading}
-        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-8 rounded-2xl transition-all shadow-md disabled:opacity-50 flex items-center justify-center gap-2 mx-auto w-full md:w-auto"
+        disabled={loading || !selectedStore}
+        className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-8 rounded-2xl transition-all shadow-md disabled:opacity-50 flex items-center justify-center gap-2 mx-auto w-full md:w-auto"
       >
         {loading ? 'Starting Sync...' : 'Run Manual Sync Now'}
       </button>

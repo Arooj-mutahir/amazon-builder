@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query, Depends, Request, HTTPException, Backgroun
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+from pydantic import BaseModel  # ✅ Naya import
 
 from app.database import get_db
 from app.models import ShopifyStore
@@ -22,6 +23,10 @@ from app.worker.sync_job import sync_prices_job
 router = APIRouter()
 
 FRONTEND_URL = "https://ingenious-caring-production-c9aed584.up.railway.app"
+
+# ✅ NAYA: Request body ke liye model
+class SyncRequest(BaseModel):
+    shop: str
 
 # ============================================
 # 1. INSTALL ROUTE
@@ -131,11 +136,24 @@ async def shopify_callback(
 
 
 # ============================================
-# 3. NAYA ROUTE: Manual Sync Trigger
+# 3. NAYA ROUTE: Manual Sync Trigger (Store Specific)
 # ============================================
 @router.post("/trigger-sync")
-async def trigger_manual_sync(background_tasks: BackgroundTasks):
-    # ✅ Background mein sync job chalao taaki frontend timeout na ho
-    background_tasks.add_task(sync_prices_job)
-    print("🚀 [MANUAL TRIGGER] Sync job started via API.", flush=True)
-    return {"status": "success", "message": "Price & Inventory sync started in background."}
+async def trigger_manual_sync(
+    payload: SyncRequest,  # ✅ Ab shop receive hoga
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
+    shop_domain = payload.shop
+    
+    # Store verify karein
+    store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop_domain).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found in database.")
+
+    print(f"🚀 [MANUAL TRIGGER] Sync started for store: {shop_domain}", flush=True)
+    
+    # ✅ Sirf usi store ke liye sync job chalao
+    background_tasks.add_task(sync_prices_job, shop_domain=shop_domain)
+    
+    return {"status": "success", "message": f"Price & Inventory sync started for {shop_domain}."}
