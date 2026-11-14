@@ -20,12 +20,11 @@ async def process_multi_variant(
         # ✅ shopify_payload mein add karein taaki Shopify ko jaye
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ FIX: store=store aur db=db hata diya hai
+    # ✅ FIX: compare_price_markup argument hata diya (error fix)
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
         product_data=shopify_payload, variants_raw=clean_variants,
-        markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
-        compare_price_markup=compare_price_markup  # ✅ NAYA: Pass karein
+        markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
     )
 
     # ✅ 1. Check karein ke GraphQL level par koi error toh nahi

@@ -138,18 +138,26 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                   }
                 }
                 """
+                
+                # ✅ NAYA: Compare Price Single Variant ke liye
+                variant_update_payload = {
+                    "id": first_variant_id,
+                    "price": str(product_data.get('price', '0.00')),
+                    "inventoryItem": {
+                        "tracked": True,
+                        "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}},
+                        "sku": product_data.get('asin', ''),
+                    },
+                    "optionValues": [{"name": 'Default', "optionName": 'Title'}],
+                }
+                
+                # Agar compare_at_price payload mein aaya hai toh add karein
+                if product_data.get('compare_at_price'):
+                    variant_update_payload["compareAtPrice"] = str(product_data.get('compare_at_price'))
+
                 await shopify_graphql(shop, access_token, update_mutation, {
                     "productId": product_id,
-                    "variants": [{
-                        "id": first_variant_id,
-                        "price": str(product_data.get('price', '0.00')),
-                        "inventoryItem": {
-                            "tracked": True,
-                            "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}},
-                            "sku": product_data.get('asin', ''),
-                        },
-                        "optionValues": [{"name": 'Default', "optionName": 'Title'}],
-                    }]
+                    "variants": [variant_update_payload]
                 })
 
                 # ✅ Actual location fetch karein
@@ -207,6 +215,9 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         location_id = await get_primary_location(shop, access_token)
         parent_stock_qty = _resolve_parent_stock(product_data, default_stock_qty=0)
         
+        # ✅ Compare Price Markup from product_data
+        compare_at_price = product_data.get('compare_at_price')
+
         per_variant_options = []
         for idx, v_raw in enumerate(variants_raw):
             opt_values = {}
@@ -354,18 +365,24 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                   }
                 }
                 """
+                
+                # ✅ NAYA: Default variant mein Compare Price
+                first_variant_payload = {
+                    "id": first_variant_id,
+                    "price": str(first_final_price),
+                    "inventoryItem": {
+                        "tracked": True,
+                        "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}},
+                        "sku": first_v_raw.get("asin", ""),
+                    },
+                    "optionValues": first_option_values,
+                }
+                if compare_at_price:
+                    first_variant_payload["compareAtPrice"] = str(compare_at_price)
+
                 await shopify_graphql(shop, access_token, update_mutation, {
                     "productId": product_id,
-                    "variants": [{
-                        "id": first_variant_id,
-                        "price": str(first_final_price),
-                        "inventoryItem": {
-                            "tracked": True,
-                            "measurement": {"weight": {"value": 0.5, "unit": "KILOGRAMS"}},
-                            "sku": first_v_raw.get("asin", ""),
-                        },
-                        "optionValues": first_option_values,
-                    }]
+                    "variants": [first_variant_payload]
                 })
 
             # ✅ 3. Baqi variants create karein
@@ -379,7 +396,8 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                 
                 option_values_payload = [{"name": entry["opts"][name], "optionName": name} for name in option_names]
 
-                shopify_variants.append({
+                # ✅ NAYA: Baaki variants mein Compare Price
+                variant_payload = {
                     "price": str(v_final_price),
                     "inventoryItem": {
                         "tracked": True,
@@ -387,7 +405,11 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                         "sku": v_raw.get("asin", ""),
                     },
                     "optionValues": option_values_payload,
-                })
+                }
+                if compare_at_price:
+                    variant_payload["compareAtPrice"] = str(compare_at_price)
+
+                shopify_variants.append(variant_payload)
 
             if shopify_variants:
                 variants_mutation = """
