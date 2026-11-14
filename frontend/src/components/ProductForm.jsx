@@ -6,7 +6,6 @@ import SubmitButton from './SubmitButton';
 
 export default function ProductForm({ 
   url, setUrl, loading, onSubmit, 
-  stores, selectedStore, setSelectedStore,
   collections, selectedCollections, setSelectedCollections,
   markup, markupType, extraPercent, taxRate
 }) {
@@ -20,10 +19,10 @@ export default function ProductForm({
 
   return (
     <div className="space-y-6 md:space-y-8 w-full">
-      {/* 1. URL & Store Input */}
+      {/* 1. URL Input (Dropdown hata diya gaya hai) */}
       <UrlStoreInput 
-        url={url} setUrl={setUrl} 
-        stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore} 
+        url={url} 
+        setUrl={setUrl} 
         loading={loading} 
       />
 
