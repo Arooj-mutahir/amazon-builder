@@ -10,6 +10,25 @@
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 
     <title>Amazon to Shopify</title>
+
+    <!-- ✅ NAYA SCRIPT: White Screen Flash Rokne Ke Liye -->
+    <script>
+      (function() {
+        try {
+          const savedTheme = localStorage.getItem('theme');
+          const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.backgroundColor = '#111827'; // Tailwind gray-900 (Dark)
+          } else {
+            document.documentElement.style.backgroundColor = '#f9fafb'; // Tailwind gray-50 (Light)
+          }
+        } catch (e) {
+          console.error("Theme script error:", e);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
