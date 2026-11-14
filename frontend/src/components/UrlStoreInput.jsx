@@ -17,19 +17,21 @@ export default function UrlStoreInput({
         />
       </div>
       
-      <select 
-        className="w-full md:w-auto px-5 py-3.5 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-700 dark:text-gray-200 font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-sm text-sm md:text-base"
-        value={selectedStore}
-        onChange={(e) => setSelectedStore(e.target.value)}
-        disabled={loading}
-      >
-        {stores.map((store) => (
-          // ✅ Yahan store.shop_domain use kiya hai
-          <option key={store.id || store.shop_domain} value={store.shop_domain}>
-            {store.shop_domain.split('.')[0]}
-          </option>
-        ))}
-      </select>
+      {/* ✅ FIX: Dropdown tabhi dikhe jab 1 se zyada stores hon */}
+      {stores.length > 1 && (
+        <select 
+          className="w-full md:w-auto px-5 py-3.5 bg-gray-50/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-gray-700 dark:text-gray-200 font-semibold outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-sm text-sm md:text-base"
+          value={selectedStore}
+          onChange={(e) => setSelectedStore(e.target.value)}
+          disabled={loading}
+        >
+          {stores.map((store) => (
+            <option key={store.id || store.shop_domain} value={store.shop_domain}>
+              {store.shop_domain.split('.')[0]}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

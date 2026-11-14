@@ -25,9 +25,7 @@ export default function App() {
   const [selectedCollections, setSelectedCollections] = useState([]);
 
   // ✅ Dynamic API URLs
-  // Backend base URL (bina /api/shopify ke)
   const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
-  // API URL (with /api/shopify)
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
   // 1. Connected Stores Fetch Karein
@@ -38,11 +36,9 @@ export default function App() {
         setStores(res.data);
         
         if (res.data.length > 0) {
-          // ✅ URL se 'shop' param nikaalein (Shopify Admin se aata hai)
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
           
-          // Agar URL mein shop hai, toh wahi select karein, warna default pehla store
           const storeToSelect = shopFromUrl || res.data[0].shop_domain;
           setSelectedStore(storeToSelect);
         }
@@ -71,8 +67,6 @@ export default function App() {
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
-      // ✅ FIX: Double API URL ki problem solve ki
-      // Hum BACKEND_URL use kar rahe hain, taaki /api/shopify double na ho
       window.location.href = `${BACKEND_URL}/api/shopify/install?shop=${newShop}`;
     }
   };
@@ -125,7 +119,8 @@ export default function App() {
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {activeTab === 'dashboard' && (
+        {/* ✅ FIX: Banner tabhi dikhega jab koi store connected nahi hoga */}
+        {activeTab === 'dashboard' && stores.length === 0 && (
           <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
             <p>Connect a new Shopify store to manage its products.</p>
             <button onClick={handleConnectStore} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition">
