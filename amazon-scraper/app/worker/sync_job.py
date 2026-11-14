@@ -71,6 +71,7 @@ async def sync_prices_job(store_id: int = None):
                 print(f"=======================================================", flush=True)
                 print(f"🔎 Checking ASIN: {product.asin} (Shopify ID: {product.shopify_product_id})", flush=True)
 
+                # ✅ Store ki current settings uthayein
                 store_markup = float(store.default_markup if store.default_markup is not None else 0.0)
                 store_markup_type = str(store.default_markup_type or "fixed").lower()
                 store_extra = float(store.default_extra_percent if store.default_extra_percent is not None else 0.0)
@@ -109,9 +110,9 @@ async def sync_prices_job(store_id: int = None):
 
                 latest_amazon_price = float(latest_data.get("price") or 0.0)
                 
+                # ✅ FIX: Agar latest_amazon_price 0 hai, toh skip NAHI karenge, balki purani price use karenge
                 if latest_amazon_price <= 0:
-                    print(f"   ⏭️ Skipping {product.asin} (Amazon Price is $0.00 or unavailable)", flush=True)
-                    continue
+                    print(f"   ⚠️ Amazon Price is $0.00 for {product.asin}. Using old data if available.", flush=True)
 
                 latest_parent_stock = latest_data.get("stock_qty")
                 latest_parent_available = _get_availability(latest_data)
@@ -121,8 +122,9 @@ async def sync_prices_job(store_id: int = None):
 
                 print(f"   💰 Calculating prices & updating Database...", flush=True)
                 for prod in all_products:
+                    # ✅ Purana price nikaalein agar naya 0 hai
                     if prod.asin == product.asin:
-                        v_amazon_price = latest_amazon_price
+                        v_amazon_price = latest_amazon_price if latest_amazon_price > 0 else prod.amazon_price
                         v_available = latest_parent_available
                         v_stock = resolved_parent_stock
                     else:
@@ -130,15 +132,21 @@ async def sync_prices_job(store_id: int = None):
                         fetched_p = v_data.get("price")
                         v_amazon_price = float(fetched_p) if (fetched_p and float(fetched_p) > 0) else latest_amazon_price
                         
+                        # Agar naya 0 hai, toh purana use karein
+                        if v_amazon_price <= 0:
+                            v_amazon_price = prod.amazon_price
+
                         v_available = _get_availability(v_data) if (v_data.get("in_stock") is not None or v_data.get("is_available") is not None) else latest_parent_available
                         v_raw_stock = v_data.get("stock_qty") if v_data.get("stock_qty") is not None else latest_parent_stock
                         v_stock = _resolve_stock(v_available, v_raw_stock, default_stock)
 
-                    if v_amazon_price > 0:
+                    # ✅ Price calculate karein (agar purana price available hai)
+                    if v_amazon_price and v_amazon_price > 0:
                         v_final_price = calculate_final_price(v_amazon_price, store_markup, store_markup_type, store_extra, store_tax)
                         prod.price = float(v_final_price)
                         prod.amazon_price = float(v_amazon_price)
 
+                    # ✅ YEH LINES HAR HAAL MEIN CHALENGI (Force Settings Update)
                     prod.markup = store_markup
                     prod.markup_type = store_markup_type
                     prod.extra_percent = store_extra
@@ -150,10 +158,10 @@ async def sync_prices_job(store_id: int = None):
                         prod.availability = "In Stock" if prod.is_available else "Out of Stock"
 
                     v_type_label = "Parent" if not prod.is_variation else "Child"
-                    print(f"      👉 ASIN {prod.asin} ({v_type_label}): Amazon=${v_amazon_price:.2f} -> UI Final=${prod.price:.2f} | Stock={prod.stock_quantity} ({prod.availability})", flush=True)
+                    print(f"      👉 ASIN {prod.asin} ({v_type_label}): Amazon=${v_amazon_price or 0.0:.2f} -> UI Final=${prod.price or 0.0:.2f} | Stock={prod.stock_quantity} ({prod.availability})", flush=True)
 
                 db.commit()
-                print(f"   💾 Database updated successfully.", flush=True)
+                print(f"   💾 Database settings updated successfully.", flush=True)
 
                 token = await _get_valid_access_token(store, db)
                 shopify_product_id = product.shopify_product_id
@@ -208,18 +216,20 @@ async def sync_prices_job(store_id: int = None):
                 for prod in all_products:
                     fresh_v_id = fresh_variant_map.get(prod.asin)
                     if fresh_v_id and prod.price:
-                        # ✅ NAYA: Compare Price calculate karein
+                        # ✅ Compare Price logic
                         update_payload = {
                             "id": fresh_v_id, 
                             "price": f"{prod.price:.2f}"
                         }
                         
-                        # Agar user ne compare markup > 0 set kiya hai toh compareAtPrice add karein
+                        # Agar user ne compare markup > 0 set kiya hai toh add karein
                         if store_compare_markup > 0:
                             compare_price = prod.price * (1 + (store_compare_markup / 100.0))
                             update_payload["compareAtPrice"] = f"{compare_price:.2f}"
                             print(f"      🏷️ Setting Compare Price: ${compare_price:.2f} for {prod.asin}", flush=True)
-                        # Note: Agar markup 0 hai, toh compareAtPrice ko touch nahi karenge taaki purana na hate
+                        else:
+                            # ✅ Agar 0 hai, toh Shopify se hata dein
+                            update_payload["compareAtPrice"] = None
                             
                         price_updates.append(update_payload)
 
