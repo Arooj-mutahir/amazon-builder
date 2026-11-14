@@ -19,7 +19,7 @@ async def process_multi_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ Shopify par product create karein
+    # ✅ Shopify par product create karein (Images ab variants ke sath jayengi)
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
         product_data=shopify_payload, variants_raw=clean_variants,
@@ -43,11 +43,10 @@ async def process_multi_variant(
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
     # ==========================================
-    # ✅ NAYA: PARENT PRODUCT KO DATABASE MEIN SAVE KAREIN
+    # ✅ PARENT PRODUCT DATABASE MEIN SAVE KAREIN
     # ==========================================
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
-    # Parent ki availability aur stock calculate karein
     parent_available = _get_availability(main_data)
     parent_stock_raw = main_data.get("stock_qty")
     parent_stock_qty = _resolve_stock(parent_available, parent_stock_raw, default_stock_qty)
@@ -56,7 +55,6 @@ async def process_multi_variant(
     availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
     if not new_product:
-        # Parent Product database mein nahi hai, toh create karein
         new_product = Product(
             asin=main_data["asin"], 
             parent_asin=main_data.get("parent_asin"), 
@@ -87,7 +85,6 @@ async def process_multi_variant(
         db.add(new_product)
         print(f"✅ Parent product created in DB: {main_data['asin']}", flush=True)
     else:
-        # Parent Product pehle se hai, toh details update karein
         new_product.shopify_product_id = shopify_id
         new_product.shopify_store_id = store.id
         new_product.price = shopify_payload["price"]
@@ -113,13 +110,12 @@ async def process_multi_variant(
     db.commit()
 
     # ==========================================
-    # ✅ CHILD PRODUCTS KO DATABASE MEIN SAVE KAREIN
+    # ✅ CHILD PRODUCTS DATABASE MEIN SAVE KAREIN
     # ==========================================
     try:
         saved_variants_count = 0
         for v in clean_variants:
             v_asin = v.get("asin")
-            # Parent ASIN ko skip karein, sirf child save karein
             if not v_asin or v_asin == main_data.get("asin"):
                 continue
 
