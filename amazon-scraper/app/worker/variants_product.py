@@ -5,11 +5,12 @@ from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_acc
 from app.worker.stock_utils import _get_availability, _resolve_stock
 
 async def process_multi_variant(store, main_data, clean_variants, user_markup, user_markup_type, user_extra, user_tax, final_tags, extracted_categories, shopify_payload, shop_domain, collection_ids, db, default_stock_qty):
+    
+    # ✅ FIX: store=store aur db=db hata diya hai
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
         product_data=shopify_payload, variants_raw=clean_variants,
-        markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
-        store=store, db=db,
+        markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
     )
 
     # ✅ 1. Check karein ke GraphQL level par koi error toh nahi
