@@ -4,13 +4,28 @@ from app.services.shopify import create_shopify_product_with_variants, publish_p
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
 
-async def process_multi_variant(store, main_data, clean_variants, user_markup, user_markup_type, user_extra, user_tax, final_tags, extracted_categories, shopify_payload, shop_domain, collection_ids, db, default_stock_qty):
+async def process_multi_variant(
+    store, main_data, clean_variants, user_markup, user_markup_type, 
+    user_extra, user_tax, final_tags, extracted_categories, shopify_payload, 
+    shop_domain, collection_ids, db, default_stock_qty,
+    compare_price_markup: float = 0.0  # ✅ NAYA PARAMETER
+):
     
+    # ✅ Compare Price calculate karein (agar markup > 0 hai)
+    compare_price = None
+    if compare_price_markup > 0:
+        final_price = shopify_payload.get("price", 0.0)
+        compare_price = final_price * (1 + (compare_price_markup / 100.0))
+        print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
+        # ✅ shopify_payload mein add karein taaki Shopify ko jaye
+        shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
+
     # ✅ FIX: store=store aur db=db hata diya hai
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
         product_data=shopify_payload, variants_raw=clean_variants,
-        markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
+        markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
+        compare_price_markup=compare_price_markup  # ✅ NAYA: Pass karein
     )
 
     # ✅ 1. Check karein ke GraphQL level par koi error toh nahi

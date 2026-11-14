@@ -6,7 +6,11 @@ from app.services.shopify import create_shopify_product, publish_product, set_pr
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
 
-async def process_single_variant(store, main_data, user_markup, user_markup_type, user_extra, user_tax, final_tags, extracted_categories, shopify_payload, shop_domain, db, default_stock_qty):
+async def process_single_variant(
+    store, main_data, user_markup, user_markup_type, user_extra, user_tax, 
+    final_tags, extracted_categories, shopify_payload, shop_domain, db, default_stock_qty,
+    compare_price_markup: float = 0.0  # ✅ NAYA PARAMETER
+):
     new_product = None
     existing = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
@@ -63,15 +67,25 @@ async def process_single_variant(store, main_data, user_markup, user_markup_type
     fresh_token = await _get_valid_access_token(store, db, force_refresh=True)
     print(f"🔑 Fresh token obtained: {fresh_token[:15]}...", flush=True)
 
+    # ✅ NAYA: Compare Price calculate karein
+    final_price = shopify_payload["price"]
+    compare_price = None
+    if compare_price_markup > 0:
+        compare_price = final_price * (1 + (compare_price_markup / 100.0))
+        print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
+
+    # ✅ shopify_payload mein compareAtPrice add karein
+    if compare_price:
+        shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
+
     # ✅ Create product with fresh token
     result = await create_shopify_product(
         shop=shop_domain, 
-        access_token=fresh_token,  # ✅ Fresh token pass kiya
-        product_data=shopify_payload
+        access_token=fresh_token,
+        product_data=shopify_payload  # ✅ Ab isme compare_at_price bhi hai
     )
 
     if result and "errors" not in result:
-        # ✅ productCreate ke response se ID nikaalein
         user_errors = result.get("data", {}).get("productCreate", {}).get("userErrors", [])
         if user_errors:
             print(f"❌ Product Creation User Errors: {user_errors}", flush=True)

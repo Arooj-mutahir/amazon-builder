@@ -18,6 +18,7 @@ async def add_product_from_shopify_app(
     markup_type: Optional[str] = Body("fixed", embed=True),
     extra_percent: Optional[float] = Body(0.0, embed=True),
     tax_rate: Optional[float] = Body(0.0, embed=True),
+    compare_price_markup: Optional[float] = Body(0.0, embed=True), # ✅ NAYA: Receive karein
     collection_ids: list = Body(default=[], embed=True),
     authorization: str = Header(None),
     db: Session = Depends(get_db),
@@ -26,7 +27,7 @@ async def add_product_from_shopify_app(
     markup, markup_type, extra_percent, tax_rate = clean_markup_values(markup, markup_type, extra_percent, tax_rate)
 
     # 🔥 DEBUG PRINT
-    print(f"\n📥 FRONTEND SE AAYA: Markup={markup}, Type={markup_type}, Extra={extra_percent}, Tax={tax_rate}", flush=True)
+    print(f"\n📥 FRONTEND SE AAYA: Markup={markup}, Type={markup_type}, Extra={extra_percent}, Tax={tax_rate}, Compare={compare_price_markup}", flush=True)
 
     amazon_url = _normalize_amazon_url(amazon_url)
     store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop_domain).first()
@@ -43,11 +44,13 @@ async def add_product_from_shopify_app(
             detail=f"Invalid markup_type. Must be one of {VALID_MARKUP_TYPES}",
         )
 
+    # ✅ compare_price_markup ko background task mein pass karein
     background_tasks.add_task(
         _background_fetch_and_push,
         amazon_url=amazon_url, shop_domain=shop_domain, store_id=store.id,
         markup=markup, markup_type=markup_type, extra_percent=extra_percent,
         tax_rate=tax_rate,
+        compare_price_markup=compare_price_markup or 0.0, # ✅ Naya parameter
         collection_ids=collection_ids or [],
     )
     return {"success": True, "message": "Fetch started.", "asin": asin_quick}

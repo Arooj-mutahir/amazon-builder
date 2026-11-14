@@ -7,8 +7,6 @@ from app.database import SessionLocal
 from app.models import ShopifyStore
 from app.services.amazon_bridge import get_shopify_product_data
 
-# ❌ REMOVED: from app.worker.sync_job import sync_prices_job (Top-level import hata diya)
-
 from app.worker.single_product import process_single_variant
 from app.worker.variants_product import process_multi_variant
 
@@ -19,7 +17,9 @@ from app.worker.stock_utils import _get_availability, _resolve_stock
 
 async def _background_fetch_and_push(
     amazon_url: str, shop_domain: str, store_id: int, 
-    markup, markup_type, extra_percent, tax_rate, collection_ids: list
+    markup, markup_type, extra_percent, tax_rate, 
+    compare_price_markup: float = 0.0, # ✅ NAYA PARAMETER
+    collection_ids: list = None
 ):
     db = SessionLocal()
     try:
@@ -36,7 +36,7 @@ async def _background_fetch_and_push(
             store, markup, markup_type, extra_percent, tax_rate
         )
 
-        print(f"⚙️ [UI FETCH] Markup={user_markup}, Type={user_markup_type}, Extra={user_extra}%, Tax={user_tax}%", flush=True)
+        print(f"⚙️ [UI FETCH] Markup={user_markup}, Type={user_markup_type}, Extra={user_extra}%, Tax={user_tax}%, Compare={compare_price_markup}%", flush=True)
         default_stock_qty = getattr(store, "default_stock_qty", 0) or 0
 
         try:
@@ -104,7 +104,8 @@ async def _background_fetch_and_push(
                 user_markup=user_markup, user_markup_type=user_markup_type, user_extra=user_extra, user_tax=user_tax,
                 final_tags=final_tags, extracted_categories=extracted_categories, 
                 shopify_payload=shopify_payload, shop_domain=shop_domain, collection_ids=collection_ids, 
-                db=db, default_stock_qty=default_stock_qty
+                db=db, default_stock_qty=default_stock_qty,
+                compare_price_markup=compare_price_markup  # ✅ PASS KAREIN
             )
         else:
             print(f"🆕 Creating SINGLE-VARIANT product...", flush=True)
@@ -112,7 +113,8 @@ async def _background_fetch_and_push(
                 store=store, main_data=main_data, 
                 user_markup=user_markup, user_markup_type=user_markup_type, user_extra=user_extra, user_tax=user_tax,
                 final_tags=final_tags, extracted_categories=extracted_categories, 
-                shopify_payload=shopify_payload, shop_domain=shop_domain, db=db, default_stock_qty=default_stock_qty
+                shopify_payload=shopify_payload, shop_domain=shop_domain, db=db, default_stock_qty=default_stock_qty,
+                compare_price_markup=compare_price_markup  # ✅ PASS KAREIN
             )
             
     except Exception as e:
@@ -124,13 +126,11 @@ async def _background_fetch_and_push(
 scheduler = AsyncIOScheduler()
 
 async def run_price_update_now():
-    # ✅ Lazy import yahan kiya taaki Circular Import na ho
     from app.worker.sync_job import sync_prices_job
     print("⚡ [MANUAL TRIGGER] Price + Stock Sync Started...", flush=True)
     await sync_prices_job()
 
 def start_scheduler():
-    # ✅ Lazy import yahan kiya taaki Circular Import na ho
     from app.worker.sync_job import sync_prices_job
     
     scheduler.add_job(
