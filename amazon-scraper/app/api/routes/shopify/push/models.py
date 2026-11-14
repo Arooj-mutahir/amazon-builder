@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 class StoreSettings(BaseModel):
-    shop_domain: str
+    store_id: int  # ✅ shop_domain ki jagah store_id
     markup: float
     markup_type: str
     extra_percent: Optional[float] = 0.0

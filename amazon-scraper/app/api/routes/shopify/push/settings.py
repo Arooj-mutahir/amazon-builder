@@ -9,7 +9,8 @@ router = APIRouter()
 
 @router.post("/app/save-settings")
 async def save_store_settings(settings: StoreSettings, db: Session = Depends(get_db)):
-    store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == settings.shop_domain).first()
+    # ✅ Store ID se dhoondein
+    store = db.query(ShopifyStore).filter(ShopifyStore.id == settings.store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
 
@@ -22,7 +23,6 @@ async def save_store_settings(settings: StoreSettings, db: Session = Depends(get
     store.default_markup = settings.markup
     store.default_markup_type = settings.markup_type
     
-    # ✅ FIX: Agar "both" nahi hai, toh DB mein bhi Extra forcefully 0 save karein
     if settings.markup_type != "both":
         store.default_extra_percent = 0.0
     else:

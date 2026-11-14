@@ -4,7 +4,8 @@ import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles } from 'lucide-
 
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
-export default function Settings({ onBack, shopDomain }) {
+// ✅ shopDomain ki jagah storeId receive karein
+export default function Settings({ onBack, storeId }) {
   const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(localStorage.getItem('global_extra_percent') || '0');
@@ -12,29 +13,32 @@ export default function Settings({ onBack, shopDomain }) {
   const [saved, setSaved] = useState(false);
 
   const handleSave = async () => {
-    // ✅ FIX: Agar 'both' select nahi hai, toh extra percent forcefully 0 karo
     const finalExtraPercent = markupType === 'both' ? parseFloat(extraPercent || 0) : 0;
 
-    // 1. LocalStorage update karo (UI ke liye)
+    // 1. LocalStorage update karo
     localStorage.setItem('global_markup', markup);
     localStorage.setItem('global_markup_type', markupType);
-    localStorage.setItem('global_extra_percent', finalExtraPercent.toString()); // ✅ 0 save hoga
+    localStorage.setItem('global_extra_percent', finalExtraPercent.toString());
     localStorage.setItem('global_tax_rate', taxRate);
 
-    // 2. Database update karo (Cron Job ke liye)
+    // 2. Database update karo
     try {
       await axios.post(`${API_URL}/app/save-settings`, {
-        shop_domain: shopDomain,
+        store_id: storeId,  // ✅ Ab store_id bhejenge
         markup: parseFloat(markup || 0),
         markup_type: markupType,
-        extra_percent: finalExtraPercent, // ✅ Yahan 0 jayega
+        extra_percent: finalExtraPercent,
         tax_rate: parseFloat(taxRate || 0)
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
       console.error("Failed to save to DB", error);
-      alert("Settings could not be saved to database. Check backend terminal.");
+      if (error.response?.status === 422) {
+        alert(`Validation Error: ${JSON.stringify(error.response.data.detail)}`);
+      } else {
+        alert("Settings could not be saved to database. Check backend terminal.");
+      }
     }
   };
 
@@ -57,7 +61,6 @@ export default function Settings({ onBack, shopDomain }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl">
         
-        {/* Markup Type Dropdown */}
         <div className="md:col-span-2">
           <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2.5">Markup Strategy</label>
           <select
@@ -65,7 +68,6 @@ export default function Settings({ onBack, shopDomain }) {
             value={markupType}
             onChange={(e) => {
               setMarkupType(e.target.value);
-              // ✅ FIX: Agar user 'both' se kisi aur par switch kare, toh Extra 0 ho jaye
               if (e.target.value !== 'both') {
                 setExtraPercent('0');
                 localStorage.setItem('global_extra_percent', '0');
@@ -78,7 +80,6 @@ export default function Settings({ onBack, shopDomain }) {
           </select>
         </div>
 
-        {/* Markup Value */}
         <div>
           <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2.5 flex items-center gap-2">
             {markupType === 'percent' ? <Percent className="w-4 h-4 text-blue-500" /> : <DollarSign className="w-4 h-4 text-green-500" />}
@@ -92,7 +93,6 @@ export default function Settings({ onBack, shopDomain }) {
           />
         </div>
 
-        {/* Extra Percent (Sirf tab dikhega jab 'both' select ho) */}
         {markupType === 'both' ? (
           <div>
             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2.5 flex items-center gap-2">
@@ -107,7 +107,6 @@ export default function Settings({ onBack, shopDomain }) {
           </div>
         ) : <div></div>}
 
-        {/* Tax Rate Input */}
         <div className="md:col-span-2">
           <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2.5 flex items-center gap-2">
             <Receipt className="w-4 h-4 text-orange-500" /> Tax Rate (%)
