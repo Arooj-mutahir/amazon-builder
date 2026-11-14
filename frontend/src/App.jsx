@@ -3,6 +3,7 @@ import axios from 'axios';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
+import ManualSync from './components/ManualSync'; // ✅ Naya import
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -31,12 +32,14 @@ export default function App() {
     const path = window.location.pathname;
     if (path.includes('settings')) {
       setActiveTab('settings');
+    } else if (path.includes('manual-sync')) {  // ✅ Manual Sync ka URL check
+      setActiveTab('manual-sync');
     } else {
       setActiveTab('dashboard');
     }
   }, []);
 
-  // ✅ Stores ko fetch karein (Jab bhi dashboard par aayein)
+  // ✅ Stores fetch
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -56,6 +59,7 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
+  // ✅ Collections fetch
   useEffect(() => {
     const fetchCollections = async () => {
       if (!selectedStore) return;
@@ -125,8 +129,6 @@ export default function App() {
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* ✅ BANNER HATA DIYA GAYA HAI */}
-        
         {activeTab === 'dashboard' ? (
           <DashboardView 
             url={url} setUrl={setUrl}
@@ -137,8 +139,10 @@ export default function App() {
             error={error} successMsg={successMsg}
             onConnectStore={handleConnectStore}
           />
-        ) : (
+        ) : activeTab === 'settings' ? (
           <Settings onBack={handleBackFromSettings} />
+        ) : (
+          <ManualSync API_URL={API_URL} />  // ✅ Naya Page render
         )}
       </main>
 

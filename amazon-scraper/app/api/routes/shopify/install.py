@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import APIRouter, Query, Depends, Request, HTTPException
+from fastapi import APIRouter, Query, Depends, Request, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
@@ -15,6 +15,9 @@ from app.services.shopify_auth import (
 )
 from app.services.shopify.locations import get_primary_location
 from app.services.shopify.client import shopify_graphql
+
+# ✅ NAYA: Sync job import karein
+from app.worker.sync_job import sync_prices_job 
 
 router = APIRouter()
 
@@ -125,3 +128,14 @@ async def shopify_callback(
     
     # ✅ status_code=302
     return RedirectResponse(url=redirect_url, status_code=302)
+
+
+# ============================================
+# 3. NAYA ROUTE: Manual Sync Trigger
+# ============================================
+@router.post("/trigger-sync")
+async def trigger_manual_sync(background_tasks: BackgroundTasks):
+    # ✅ Background mein sync job chalao taaki frontend timeout na ho
+    background_tasks.add_task(sync_prices_job)
+    print("🚀 [MANUAL TRIGGER] Sync job started via API.", flush=True)
+    return {"status": "success", "message": "Price & Inventory sync started in background."}
