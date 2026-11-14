@@ -3,18 +3,28 @@ import { useState } from 'react';
 import axios from 'axios';
 import { RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 
-export default function ManualSync({ API_URL }) {
+// ✅ UPDATED: selectedStoreId prop receive karein
+export default function ManualSync({ API_URL, selectedStoreId }) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
   const handleSync = async () => {
+    // ✅ Safety check: Agar store ID nahi hai toh error dein
+    if (!selectedStoreId) {
+      setError("No store connected. Please connect a store first.");
+      return;
+    }
+
     setLoading(true);
     setSuccess('');
     setError('');
 
     try {
-      const res = await axios.post(`${API_URL}/trigger-sync`);
+      // ✅ UPDATED: store_id body mein bhejein
+      const res = await axios.post(`${API_URL}/trigger-sync`, {
+        store_id: selectedStoreId
+      });
       setSuccess(res.data.message || 'Sync started successfully! Check backend logs.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to start sync.');
@@ -35,9 +45,16 @@ export default function ManualSync({ API_URL }) {
         Click the button below to instantly fetch the latest prices and stock from Amazon and update your Shopify store. (Bypasses the 2 AM cron job).
       </p>
 
+      {/* ✅ Optional: Dikhayein kis store ka sync ho raha hai */}
+      {selectedStoreId && (
+        <p className="text-xs text-gray-400 mb-4">
+          Target Store ID: <span className="font-semibold text-blue-500">{selectedStoreId}</span>
+        </p>
+      )}
+
       <button
         onClick={handleSync}
-        disabled={loading}
+        disabled={loading || !selectedStoreId}
         className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-8 rounded-2xl transition-all shadow-md disabled:opacity-50 flex items-center justify-center gap-2 mx-auto w-full md:w-auto"
       >
         {loading ? 'Starting Sync...' : 'Run Manual Sync Now'}

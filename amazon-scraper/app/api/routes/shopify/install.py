@@ -3,6 +3,7 @@ from fastapi import APIRouter, Query, Depends, Request, HTTPException, Backgroun
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
+from pydantic import BaseModel  # ✅ NAYA: Request body parse karne ke liye
 
 from app.database import get_db
 from app.models import ShopifyStore
@@ -22,6 +23,12 @@ from app.worker.sync_job import sync_prices_job
 router = APIRouter()
 
 FRONTEND_URL = "https://ingenious-caring-production-c9aed584.up.railway.app"
+
+# ============================================
+# 0. REQUEST MODEL (Naya)
+# ============================================
+class SyncRequest(BaseModel):
+    store_id: int  # ✅ Frontend se integer ID receive karega
 
 # ============================================
 # 1. INSTALL ROUTE
@@ -117,7 +124,6 @@ async def shopify_callback(
         print(f"✅ New store saved: {shop}, location_id={location_id}", flush=True)
 
     # ── 5. Redirect back to the embedded app ──
-    # We MUST pass 'shop' and 'host' so Shopify App Bridge loads correctly
     host = request.query_params.get("host", "")
     params = f"shop={shop}"
     if host:
@@ -126,16 +132,32 @@ async def shopify_callback(
     redirect_url = f"{FRONTEND_URL}?{params}"
     print(f"🚀 Redirecting to frontend: {redirect_url}", flush=True)
     
-    # ✅ status_code=302
     return RedirectResponse(url=redirect_url, status_code=302)
 
 
 # ============================================
-# 3. NAYA ROUTE: Manual Sync Trigger
+# 3. UPDATED ROUTE: Manual Sync Trigger
 # ============================================
 @router.post("/trigger-sync")
-async def trigger_manual_sync(background_tasks: BackgroundTasks):
-    # ✅ Background mein sync job chalao taaki frontend timeout na ho
-    background_tasks.add_task(sync_prices_job)
-    print("🚀 [MANUAL TRIGGER] Sync job started via API.", flush=True)
-    return {"status": "success", "message": "Price & Inventory sync started in background."}
+async def trigger_manual_sync(
+    payload: SyncRequest,  # ✅ Frontend se body receive karega
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    store_id = payload.store_id
+    
+    # ✅ Verify karein ki store exist karta hai ya nahi
+    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found.")
+
+    print(f"🚀 [MANUAL TRIGGER] Sync job started for Store ID: {store_id} ({store.shop_domain})", flush=True)
+    
+    # ✅ Background mein sirf usi store ki sync job chalao
+    background_tasks.add_task(sync_prices_job, store_id=store_id)
+    
+    return {
+        "status": "success", 
+        "message": f"Price & Inventory sync started for store ID {store_id}.",
+        "store_domain": store.shop_domain
+    }

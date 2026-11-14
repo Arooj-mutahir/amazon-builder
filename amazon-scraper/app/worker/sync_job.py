@@ -43,17 +43,25 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
     return fallback_location
 
 
-async def sync_prices_job():
-    print("\n⏰ [CRON JOB] Starting Price + Stock Sync...", flush=True)
+# ✅ UPDATED: Ab store_id parameter accept karta hai
+async def sync_prices_job(store_id: int = None):
+    print(f"\n⏰ [CRON JOB] Starting Price + Stock Sync for {'Store ID: ' + str(store_id) if store_id else 'ALL Stores'}...", flush=True)
     
     from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
     
     db = SessionLocal()
     try:
-        # ✅ FIX 1: Saare products uthayein jinke paas Shopify ID hai (Parent ya Child)
-        products = db.query(Product).filter(
+        # ✅ FIX 1: Products query banayein
+        query = db.query(Product).filter(
             Product.shopify_product_id.isnot(None)
-        ).all()
+        )
+        
+        # ✅ NAYA: Agar store_id diya hai toh sirf usi store ke products uthayein
+        if store_id:
+            query = query.filter(Product.shopify_store_id == store_id)
+            print(f"🎯 Filtering products for Store ID: {store_id}", flush=True)
+        
+        products = query.all()
         print(f"🔍 Found {len(products)} products with Shopify IDs to check.\n", flush=True)
 
         for product in products:

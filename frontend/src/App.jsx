@@ -3,7 +3,7 @@ import axios from 'axios';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
-import ManualSync from './components/ManualSync'; // ✅ Naya import
+import ManualSync from './components/ManualSync';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -15,6 +15,8 @@ export default function App() {
   
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
+  // ✅ NAYA: Selected Store ki ID track karne ke liye state
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
   
   const [markup, setMarkup] = useState(() => localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(() => localStorage.getItem('global_markup_type') || 'percent');
@@ -32,14 +34,14 @@ export default function App() {
     const path = window.location.pathname;
     if (path.includes('settings')) {
       setActiveTab('settings');
-    } else if (path.includes('manual-sync')) {  // ✅ Manual Sync ka URL check
+    } else if (path.includes('manual-sync')) {
       setActiveTab('manual-sync');
     } else {
       setActiveTab('dashboard');
     }
   }, []);
 
-  // ✅ Stores fetch
+  // ✅ Stores fetch + Selected Store ID set
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -49,8 +51,12 @@ export default function App() {
         if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
-          const storeToSelect = shopFromUrl || res.data[0].shop_domain;
-          setSelectedStore(storeToSelect);
+          
+          // ✅ Domain match karke store dhoondein, warna pehla store uthayein
+          const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
+          
+          setSelectedStore(foundStore.shop_domain);
+          setSelectedStoreId(foundStore.id); // ✅ ID bhi set karein
         }
       } catch (err) {
         console.error("Failed to fetch stores", err);
@@ -142,7 +148,8 @@ export default function App() {
         ) : activeTab === 'settings' ? (
           <Settings onBack={handleBackFromSettings} />
         ) : (
-          <ManualSync API_URL={API_URL} />  // ✅ Naya Page render
+          // ✅ UPDATED: selectedStoreId prop pass karein
+          <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
         )}
       </main>
 
