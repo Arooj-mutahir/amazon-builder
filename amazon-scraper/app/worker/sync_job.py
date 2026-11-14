@@ -14,7 +14,6 @@ async def _get_primary_location_cached(store, db):
     if key in _location_cache:
         return _location_cache[key]
     
-    # ✅ Lazy import to avoid circular dependency
     from app.services.shopify.locations import get_primary_location
     from app.api.routes.shopify.helpers import _get_valid_access_token
     
@@ -23,10 +22,31 @@ async def _get_primary_location_cached(store, db):
     _location_cache[key] = loc
     return loc
 
+# ✅ NAYA: Har product ka actual location fetch karne ke liye
+async def _get_product_actual_location(store, token, inventory_item_id, fallback_location):
+    query = """
+    query getItemLocations($id: ID!) {
+      inventoryItem(id: $id) {
+        inventoryLevels(first: 1) {
+          nodes { location { id name } }
+        }
+      }
+    }
+    """
+    try:
+        res = await shopify_graphql(store.shop_domain, token, query, {"id": inventory_item_id})
+        levels = res.get("data", {}).get("inventoryItem", {}).get("inventoryLevels", {}).get("nodes", [])
+        if levels and len(levels) > 0:
+            return levels[0]["location"]["id"]
+    except Exception as e:
+        print(f"   ⚠️ Could not fetch actual location: {e}", flush=True)
+    
+    return fallback_location
+
+
 async def sync_prices_job():
     print("\n⏰ [CRON JOB] Starting Price + Stock Sync...", flush=True)
     
-    # ✅ Lazy import to avoid circular dependency
     from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
     
     db = SessionLocal()
@@ -76,6 +96,12 @@ async def sync_prices_job():
                     continue
 
                 latest_amazon_price = float(latest_data.get("price") or 0.0)
+                
+                # ✅ FIX 1: Agar price 0 hai toh skip karein (Shopify par 0 na chala jaye)
+                if latest_amazon_price <= 0:
+                    print(f"   ⏭️ Skipping {product.asin} (Amazon Price is $0.00 or unavailable)", flush=True)
+                    continue
+
                 latest_parent_stock = latest_data.get("stock_qty")
                 latest_parent_available = _get_availability(latest_data)
                 resolved_parent_stock = _resolve_stock(latest_parent_available, latest_parent_stock, default_stock)
@@ -165,7 +191,9 @@ async def sync_prices_job():
                 price_updates = []
                 stock_updates = []
                 updated_inv_ids = set()
-                location_id = getattr(store, "shopify_location_id", None) or await _get_primary_location_cached(store, db)
+                
+                # Store ka default location (fallback)
+                default_location_id = getattr(store, "shopify_location_id", None) or await _get_primary_location_cached(store, db)
 
                 for prod in all_products:
                     fresh_v_id = fresh_variant_map.get(prod.asin)
@@ -173,9 +201,17 @@ async def sync_prices_job():
                         price_updates.append({"id": fresh_v_id, "price": f"{prod.price:.2f}"})
 
                     inv_id = fresh_inventory_map.get(prod.asin)
-                    if inv_id and inv_id not in updated_inv_ids and location_id:
-                        stock_updates.append({"inventoryItemId": inv_id, "locationId": location_id, "quantity": int(prod.stock_quantity or 0)})
-                        updated_inv_ids.add(inv_id)
+                    if inv_id and inv_id not in updated_inv_ids:
+                        # ✅ FIX 2: Product ka ACTUAL location fetch karein
+                        actual_loc_id = await _get_product_actual_location(store, token, inv_id, default_location_id)
+                        
+                        if actual_loc_id:
+                            stock_updates.append({
+                                "inventoryItemId": inv_id, 
+                                "locationId": actual_loc_id, 
+                                "quantity": int(prod.stock_quantity or 0)
+                            })
+                            updated_inv_ids.add(inv_id)
 
                 if shopify_product_id and price_updates:
                     price_mutation = """
