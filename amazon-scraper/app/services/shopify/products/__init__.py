@@ -25,11 +25,9 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
     print(f'🛠️  Creating Single-Variant Product: {product_data.get("title")}', flush=True)
     
     try:
-        # ✅ Token check & refresh if expired (Though it should be fresh from caller)
         location_id = await get_primary_location(shop, access_token)
         amazon_categories = product_data.get('categories', []) or []
         
-        # ✅ Category search with potential 401 error
         shopify_category_id = None
         if amazon_categories:
             shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories)
@@ -52,13 +50,20 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
             product_data.get("reviews") or [],
         )
 
+        # ✅ FIX: Stock check karein aur uske hisaab se status set karein
+        in_stock, stock_qty = _variant_stock(product_data, default_stock_qty=0)
+        if stock_qty is None: stock_qty = 0
+        
+        # Agar stock 0 se zyada hai toh ACTIVE, warna DRAFT
+        initial_status = 'ACTIVE' if stock_qty > 0 else 'DRAFT'
+
         input_data = {
             'title': product_data.get('title', 'Untitled')[:255],
             'descriptionHtml': enhanced_description,
             'vendor': product_data.get('brand', ''),
             'productType': product_data.get('product_type') or (amazon_categories[-1] if amazon_categories else "General"),
             'tags': ", ".join(product_data.get('tags', [])) if isinstance(product_data.get('tags'), list) else str(product_data.get('tags', '')),
-            'status': 'DRAFT',
+            'status': initial_status,  # ✅ Yahan dynamic status lagaya
             'productOptions': [{'name': 'Title', 'values': [{'name': 'Default'}]}],
         }
         
@@ -68,10 +73,9 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
         # ✅ Create Product
         result = await shopify_graphql(shop, access_token, create_mutation, {'input': input_data})
         
-        # ✅ Handle 401 Error gracefully
         if 'errors' in result and "401" in str(result['errors']):
             print(f"⚠️ 401 Error detected. Token might be invalid.", flush=True)
-            return result # Error will be handled by caller
+            return result
 
         if 'errors' in result:
             return result
@@ -109,10 +113,6 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                 if 'errors' in media_res:
                     print(f"⚠️ Media upload error: {media_res['errors']}", flush=True)
 
-            in_stock, stock_qty = _variant_stock(product_data, default_stock_qty=0)
-            if stock_qty is None:
-                stock_qty = 0
-            
             # ✅ Default variant ko update karein
             get_variants_query = """
             query getProductVariants($id: ID!) {
@@ -183,7 +183,9 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
                 except Exception as e:
                     print(f"⚠️ Inventory set failed (Single): {e}", flush=True)
 
-            await publish_product(shop, access_token, product_id)
+            # ✅ Publish function ko call karein (agar stock hai toh)
+            if stock_qty > 0:
+                await publish_product(shop, access_token, product_id)
             
         return result
         
@@ -271,13 +273,17 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
         }
         """
 
+        # ✅ FIX: Multi-variant ke liye bhi status check lagaya
+        total_stock = sum(int(v.get("stock_qty") or 0) for v in variants_raw)
+        initial_status = 'ACTIVE' if total_stock > 0 else 'DRAFT'
+
         input_data = {
             'title': (product_data.get('title') or 'Untitled')[:255],
             'descriptionHtml': enhanced_description,
             'vendor': product_data.get('brand', ''),
             'productType': prod_type,
             'tags': ", ".join(product_data.get('tags', [])) if isinstance(product_data.get('tags'), list) else str(product_data.get('tags', '')),
-            'status': 'DRAFT',
+            'status': initial_status, # ✅ Dynamic status
             'productOptions': product_options,
         }
 
@@ -417,7 +423,6 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     if not inv_id:
                         continue
                     
-                    # ✅ Product ki actual location fetch karein
                     inv_loc_query = """
                     query getInventoryItemLocations($id: ID!) {
                       inventoryItem(id: $id) {
@@ -464,7 +469,9 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
 
             await _attach_variant_images(shop, access_token, product_id, fresh_media, fresh_variants, per_variant_options, gallery_urls)
 
-            await publish_product(shop, access_token, product_id)
+            # ✅ Publish function ko call karein (agar total stock 0 se zyada hai)
+            if total_stock > 0:
+                await publish_product(shop, access_token, product_id)
 
         return result
     except Exception as e:
