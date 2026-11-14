@@ -36,6 +36,7 @@ export default function App() {
     }
   }, []);
 
+  // ✅ Stores ko fetch karein (Jab bhi dashboard par aayein)
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -120,20 +121,12 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 transition-colors duration-300 flex flex-col items-center w-full overflow-x-hidden">
       
-      {/* ✅ FIX: Header ab bina props ke call ho raha hai */}
       <Header />
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {activeTab === 'dashboard' && stores.length === 0 && (
-          <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
-            <p>Connect a new Shopify store to manage its products.</p>
-            <button onClick={handleConnectStore} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded transition">
-              + Connect New Store
-            </button>
-          </div>
-        )}
-
+        {/* ✅ BANNER HATA DIYA GAYA HAI */}
+        
         {activeTab === 'dashboard' ? (
           <DashboardView 
             url={url} setUrl={setUrl}
