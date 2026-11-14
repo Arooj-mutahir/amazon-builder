@@ -3,6 +3,7 @@ import axios from 'axios';
 import Header from './components/Header';
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
+import { LayoutDashboard, Settings as SettingsIcon } from 'lucide-react'; // ✅ Icons import karein
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -12,7 +13,6 @@ export default function App() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   
-  // ✅ Stores ab dynamic hain
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
   
@@ -24,11 +24,9 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  // ✅ Dynamic API URLs
   const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
-  // 1. Connected Stores Fetch Karein
   useEffect(() => {
     const fetchStores = async () => {
       try {
@@ -38,7 +36,6 @@ export default function App() {
         if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
-          
           const storeToSelect = shopFromUrl || res.data[0].shop_domain;
           setSelectedStore(storeToSelect);
         }
@@ -49,7 +46,6 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // 2. Jab Store Change ho toh uski Collections Fetch karein
   useEffect(() => {
     const fetchCollections = async () => {
       if (!selectedStore) return;
@@ -63,7 +59,6 @@ export default function App() {
     fetchCollections();
   }, [selectedStore, API_URL]);
 
-  // 3. Naya Store Connect Karne ka Function
   const handleConnectStore = () => {
     const newShop = prompt("Enter your Shopify store URL (e.g., your-store.myshopify.com)");
     if (newShop) {
@@ -115,11 +110,29 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-900 dark:to-slate-900 transition-colors duration-300 flex flex-col items-center w-full overflow-x-hidden">
       
-      <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+      {/* ✅ Header ab simple hai, sirf logo aur theme toggle */}
+      <Header />
 
       <main className="w-full max-w-5xl p-4 md:p-6 mt-4 md:mt-6">
         
-        {/* ✅ FIX: Banner tabhi dikhega jab koi store connected nahi hoga */}
+        {/* ✅ NAYA: Dashboard aur Settings ke tabs neeche shift ho gaye */}
+        <div className="flex justify-center mb-8">
+          <nav className="flex bg-white/50 dark:bg-gray-800/50 p-1.5 rounded-2xl border border-gray-200/50 dark:border-gray-700/50 shadow-sm backdrop-blur-sm">
+            <button 
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+            >
+              <LayoutDashboard className="w-4 h-4" /> Dashboard
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-semibold rounded-xl transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+            >
+              <SettingsIcon className="w-4 h-4" /> Settings
+            </button>
+          </nav>
+        </div>
+
         {activeTab === 'dashboard' && stores.length === 0 && (
           <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex justify-between items-center">
             <p>Connect a new Shopify store to manage its products.</p>
