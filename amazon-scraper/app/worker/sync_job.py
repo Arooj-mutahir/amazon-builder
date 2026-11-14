@@ -43,7 +43,6 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
     return fallback_location
 
 
-# ✅ UPDATED: Ab store_id parameter accept karta hai
 async def sync_prices_job(store_id: int = None):
     print(f"\n⏰ [CRON JOB] Starting Price + Stock Sync for {'Store ID: ' + str(store_id) if store_id else 'ALL Stores'}...", flush=True)
     
@@ -51,12 +50,11 @@ async def sync_prices_job(store_id: int = None):
     
     db = SessionLocal()
     try:
-        # ✅ FIX 1: Products query banayein
+        # ✅ Products query banayein
         query = db.query(Product).filter(
             Product.shopify_product_id.isnot(None)
         )
         
-        # ✅ NAYA: Agar store_id diya hai toh sirf usi store ke products uthayein
         if store_id:
             query = query.filter(Product.shopify_store_id == store_id)
             print(f"🎯 Filtering products for Store ID: {store_id}", flush=True)
@@ -79,13 +77,11 @@ async def sync_prices_job(store_id: int = None):
                 store_tax = float(store.default_tax_rate if store.default_tax_rate is not None else 0.0)
                 default_stock = int(getattr(store, "default_stock_qty", 0) or 0)
                 
-                # ✅ NAYA: Compare Price Markup store se uthayein
                 store_compare_markup = float(getattr(store, "default_compare_price_markup", 0.0) or 0.0)
 
                 markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
                 print(f"   ⚙️  UI Settings (Store #{store.id}): Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}% | Compare={store_compare_markup}%", flush=True)
 
-                # ✅ FIX 2: Child products ko bhi handle karein
                 child_products = []
                 if not product.is_variation:
                     child_products = db.query(Product).filter(
@@ -96,7 +92,6 @@ async def sync_prices_job(store_id: int = None):
                 all_products = [product] + child_products
                 print(f"   📦 Total variants to sync: {len(all_products)}", flush=True)
 
-                # ✅ FIX 3: Agar product child hai, toh uske parent ka ASIN use karke scrape karein
                 asin_to_scrape = product.parent_asin if product.is_variation and product.parent_asin else product.asin
 
                 scrape_timeout = max(60.0, float(len(child_products) * 3.5 + 30.0))
@@ -223,9 +218,8 @@ async def sync_prices_job(store_id: int = None):
                         if store_compare_markup > 0:
                             compare_price = prod.price * (1 + (store_compare_markup / 100.0))
                             update_payload["compareAtPrice"] = f"{compare_price:.2f}"
-                        else:
-                            # Agar markup 0 hai, toh compareAtPrice null kar dein taaki Shopify se hata jaye
-                            update_payload["compareAtPrice"] = None
+                            print(f"      🏷️ Setting Compare Price: ${compare_price:.2f} for {prod.asin}", flush=True)
+                        # Note: Agar markup 0 hai, toh compareAtPrice ko touch nahi karenge taaki purana na hate
                             
                         price_updates.append(update_payload)
 
@@ -242,7 +236,6 @@ async def sync_prices_job(store_id: int = None):
                             updated_inv_ids.add(inv_id)
 
                 if shopify_product_id and price_updates:
-                    # ✅ UPDATED MUTATION: compareAtPrice field add ki gayi hai response mein
                     price_mutation = """
                     mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
                       productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -254,6 +247,8 @@ async def sync_prices_job(store_id: int = None):
                     user_errors = res.get("data", {}).get("productVariantsBulkUpdate", {}).get("userErrors", [])
                     if user_errors:
                         print(f"   ❌ Shopify Price Update Failed for {product.asin}: {user_errors}", flush=True)
+                    else:
+                        print(f"   ✅ Shopify Price + Compare Price Updated for {product.asin}", flush=True)
 
                 if stock_updates:
                     try:
