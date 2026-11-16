@@ -3,12 +3,11 @@ from fastapi import APIRouter, Query, Depends, Request, HTTPException, Backgroun
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
-from pydantic import BaseModel  # ✅ NAYA: Request body parse karne ke liye
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models import ShopifyStore
 
-# ✅ FIX: Imports ko aapke folder structure ke hisaab se theek kiya
 from app.services.shopify_auth import (
     build_auth_url, 
     exchange_code_for_token, 
@@ -17,29 +16,27 @@ from app.services.shopify_auth import (
 from app.services.shopify.locations import get_primary_location
 from app.services.shopify.client import shopify_graphql
 
-# ✅ NAYA: Sync job import karein
 from app.worker.sync_job import sync_prices_job 
 
 router = APIRouter()
 
 FRONTEND_URL = "https://ingenious-caring-production-c9aed584.up.railway.app"
+# ✅ Apna backend URL yahan dalein (webhook ke liye)
+BACKEND_URL = "https://amazon-builder-production.up.railway.app"
 
 # ============================================
-# 0. REQUEST MODEL (Naya)
+# 0. REQUEST MODEL
 # ============================================
 class SyncRequest(BaseModel):
-    store_id: int  # ✅ Frontend se integer ID receive karega
+    store_id: int
 
 # ============================================
 # 1. INSTALL ROUTE
 # ============================================
 @router.get("/install")
 def shopify_install(shop: str = Query(...)):
-    # Ensure shop domain is clean
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
-    
-    # ✅ status_code=302 (Not 307) to allow Shopify App Bridge to work
     return RedirectResponse(url=build_auth_url(shop), status_code=302)
 
 
@@ -56,7 +53,7 @@ async def shopify_callback(
 ):
     print(f"🔄 Callback received for store: {shop}", flush=True)
 
-    # ── 1. Verify HMAC (Security) ──
+    # ── 1. Verify HMAC ──
     query_params = dict(request.query_params)
     if not verify_hmac(query_params):
         print(f"❌ HMAC verification failed for {shop}", flush=True)
@@ -80,7 +77,7 @@ async def shopify_callback(
     refresh_expires_in = token_data.get("refresh_token_expires_in")
     now = datetime.now(timezone.utc)
 
-    # ── 3. Auto-detect primary location (With Retry) ──
+    # ── 3. Auto-detect primary location ──
     location_id = None
     for attempt in range(3):
         try:
@@ -90,7 +87,7 @@ async def shopify_callback(
                 break
         except Exception as e:
             print(f"⚠️ Location attempt {attempt+1} failed for {shop}: {e}", flush=True)
-            await asyncio.sleep(1) # Wait 1 sec before retrying
+            await asyncio.sleep(1)
 
     # ── 4. Upsert ShopifyStore in DB ──
     existing = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
@@ -103,11 +100,8 @@ async def shopify_callback(
             existing.expires_at = now + timedelta(seconds=int(expires_in))
         if refresh_expires_in:
             existing.refresh_token_expires_at = now + timedelta(seconds=int(refresh_expires_in))
-        
-        # Update location only if we found one (don't overwrite with None)
         if location_id:
             existing.shopify_location_id = location_id
-            
         db.commit()
         print(f"✅ Existing store updated: {shop}, location_id={location_id}", flush=True)
     else:
@@ -122,6 +116,44 @@ async def shopify_callback(
         db.add(new_store)
         db.commit()
         print(f"✅ New store saved: {shop}, location_id={location_id}", flush=True)
+
+    # ============================================
+    # ✅ NAYA: WEBHOOK REGISTER KAREIN (Product Delete)
+    # ============================================
+    try:
+        webhook_url = f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"
+        
+        webhook_mutation = """
+        mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+          webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+            webhookSubscription { id }
+            userErrors { field message }
+          }
+        }
+        """
+        
+        variables = {
+            "topic": "PRODUCTS_DELETE",
+            "webhookSubscription": {
+                "callbackUrl": webhook_url,
+                "format": "JSON"
+            }
+        }
+        
+        # ✅ Access Token se webhook register karein
+        webhook_res = await shopify_graphql(shop, access_token, webhook_mutation, variables)
+        
+        if webhook_res and "errors" in webhook_res:
+            print(f"⚠️ Webhook registration failed (GraphQL): {webhook_res['errors']}", flush=True)
+        else:
+            user_errors = webhook_res.get("data", {}).get("webhookSubscriptionCreate", {}).get("userErrors", [])
+            if user_errors:
+                print(f"⚠️ Webhook registration user errors: {user_errors}", flush=True)
+            else:
+                print(f"✅ Webhook registered for {shop} at {webhook_url}", flush=True)
+                
+    except Exception as e:
+        print(f"⚠️ Webhook registration exception: {e}", flush=True)
 
     # ── 5. Redirect back to the embedded app ──
     host = request.query_params.get("host", "")
@@ -140,20 +172,18 @@ async def shopify_callback(
 # ============================================
 @router.post("/trigger-sync")
 async def trigger_manual_sync(
-    payload: SyncRequest,  # ✅ Frontend se body receive karega
+    payload: SyncRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     store_id = payload.store_id
     
-    # ✅ Verify karein ki store exist karta hai ya nahi
     store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found.")
 
     print(f"🚀 [MANUAL TRIGGER] Sync job started for Store ID: {store_id} ({store.shop_domain})", flush=True)
     
-    # ✅ Background mein sirf usi store ki sync job chalao
     background_tasks.add_task(sync_prices_job, store_id=store_id)
     
     return {
