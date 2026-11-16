@@ -1,3 +1,4 @@
+# app/api/routes/shopify/install.py
 import asyncio
 from fastapi import APIRouter, Query, Depends, Request, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -21,12 +22,8 @@ from app.worker.sync_job import sync_prices_job
 router = APIRouter()
 
 FRONTEND_URL = "https://ingenious-caring-production-c9aed584.up.railway.app"
-# ✅ Apna backend URL yahan dalein (webhook ke liye)
 BACKEND_URL = "https://amazon-builder-production.up.railway.app"
 
-# ============================================
-# 0. REQUEST MODEL
-# ============================================
 class SyncRequest(BaseModel):
     store_id: int
 
@@ -38,7 +35,6 @@ def shopify_install(shop: str = Query(...)):
     if not shop.endswith(".myshopify.com"):
         shop = f"{shop}.myshopify.com"
     return RedirectResponse(url=build_auth_url(shop), status_code=302)
-
 
 # ============================================
 # 2. CALLBACK ROUTE
@@ -140,7 +136,6 @@ async def shopify_callback(
             }
         }
         
-        # ✅ Access Token se webhook register karein
         webhook_res = await shopify_graphql(shop, access_token, webhook_mutation, variables)
         
         if webhook_res and "errors" in webhook_res:
@@ -165,7 +160,6 @@ async def shopify_callback(
     print(f"🚀 Redirecting to frontend: {redirect_url}", flush=True)
     
     return RedirectResponse(url=redirect_url, status_code=302)
-
 
 # ============================================
 # 3. UPDATED ROUTE: Manual Sync Trigger
