@@ -299,7 +299,6 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
 
         if product_id:
             # ✅ 1. Images upload karein
-            media_id_map = {}
             if gallery_urls:
                 print(f"🖼️  Uploading {len(gallery_urls)} images...", flush=True)
                 media_mutation = """
@@ -311,20 +310,10 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                 }
                 """
                 media_payload = [{"originalSource": url, "mediaContentType": "IMAGE"} for url in gallery_urls]
-                media_res = await shopify_graphql(shop, access_token, media_mutation, {
+                await shopify_graphql(shop, access_token, media_mutation, {
                     "productId": product_id,
                     "media": media_payload
                 })
-                
-                # ✅ FIX: None check karein
-                if media_res and media_res.get("data"):
-                    created_media = media_res.get("data", {}).get("productCreateMedia", {}).get("media", [])
-                    for m in created_media:
-                        if m and m.get("image"):
-                            m_url = m.get("image", {}).get("url")
-                            if m_url: media_id_map[m_url] = m.get("id")
-                else:
-                    print(f"⚠️ Media upload response was empty or None. Continuing...", flush=True)
 
             # ✅ 2. Pehle default variant ko update karein
             get_variants_query = """
@@ -401,7 +390,6 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
 
                 shopify_variants.append(variant_payload)
 
-            created_variants = []
             if shopify_variants:
                 variants_mutation = """
                 mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
@@ -425,11 +413,10 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                 if var_user_errors:
                     print(f"❌ Variants User Errors: {var_user_errors}", flush=True)
                     return {"errors": var_user_errors}
-                
-                created_variants = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("productVariants", [])
 
-            # ✅ 4. Har variant ki actual location fetch karein aur stock set karein
-            if created_variants:
+                # ✅ Har variant ki actual location fetch karein aur stock set karein
+                created_variants = var_result.get("data", {}).get("productVariantsBulkCreate", {}).get("productVariants", [])
+                
                 for cv in created_variants:
                     inv_item = cv.get("inventoryItem") or {}
                     sku = inv_item.get("sku")
@@ -452,6 +439,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     actual_location_id = location_id
                     if inv_levels:
                         actual_location_id = inv_levels[0]["location"]["id"]
+                        print(f"📍 Variant {sku} actual location: {inv_levels[0]['location']['name']}", flush=True)
                     
                     for v_raw in variants_raw:
                         if v_raw.get("asin") == sku:
@@ -466,9 +454,7 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                                 print(f"⚠️ Inventory set failed for {sku}: {e}", flush=True)
                             break
 
-            # ✅ 5. Images ko variants ke sath attach karein
-            print("🖼️ Attaching images to variants...", flush=True)
-            
+            # ✅ 4. Images ko variants ke sath attach karein
             media_query = """
             query getProductMedia($id: ID!) {
               product(id: $id) {
@@ -478,64 +464,13 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             }
             """
             media_result = await shopify_graphql(shop, access_token, media_query, {"id": product_id})
-            
-            if media_result and media_result.get("data"):
-                refreshed_product = (media_result.get("data") or {}).get("product") or {}
-                fresh_media = (refreshed_product.get("media") or {}).get("nodes") or []
-                fresh_variants = (refreshed_product.get("variants") or {}).get("nodes") or []
+            refreshed_product = (media_result.get("data") or {}).get("product") or {}
+            fresh_media = (refreshed_product.get("media") or {}).get("nodes") or []
+            fresh_variants = (refreshed_product.get("variants") or {}).get("nodes") or []
 
-                fresh_media_map = {}
-                for m in fresh_media:
-                    if m and m.get("image"):
-                        m_url = m.get("image", {}).get("url")
-                        if m_url: fresh_media_map[m_url] = m.get("id")
+            await _attach_variant_images(shop, access_token, product_id, fresh_media, fresh_variants, per_variant_options, gallery_urls)
 
-                for entry in per_variant_options:
-                    v_asin = entry.get("asin")
-                    v_images = entry.get("images") or []
-                    
-                    target_variant_id = None
-                    for fv in fresh_variants:
-                        if fv.get("sku") == v_asin:
-                            target_variant_id = fv.get("id")
-                            break
-                    
-                    if not target_variant_id or not v_images:
-                        continue
-
-                    media_ids_to_attach = []
-                    for img_url in v_images:
-                        if img_url in fresh_media_map:
-                            media_ids_to_attach.append(fresh_media_map[img_url])
-                        else:
-                            for m_url, m_id in fresh_media_map.items():
-                                if m_url.endswith(img_url.split("?")[0]) or img_url.endswith(m_url.split("?")[0]):
-                                    media_ids_to_attach.append(m_id)
-                                    break
-                    
-                    if media_ids_to_attach:
-                        attach_mutation = """
-                        mutation productVariantAppendMedia($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
-                          productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
-                            productVariants { id }
-                            userErrors { field message }
-                          }
-                        }
-                        """
-                        append_payload = [{
-                            "variantId": target_variant_id,
-                            "mediaIds": media_ids_to_attach
-                        }]
-                        append_res = await shopify_graphql(shop, access_token, attach_mutation, {
-                            "productId": product_id,
-                            "variantMedia": append_payload
-                        })
-                        
-                        if append_res and 'errors' in append_res:
-                            print(f"⚠️ Attach image error for {v_asin}: {append_res['errors']}", flush=True)
-                        elif append_res:
-                            print(f"✅ Attached {len(media_ids_to_attach)} images to variant {v_asin}", flush=True)
-
+            # ✅ Publish function ko call karein (agar total stock 0 se zyada hai)
             if total_stock > 0:
                 await publish_product(shop, access_token, product_id)
 
