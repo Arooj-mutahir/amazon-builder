@@ -144,7 +144,7 @@ export default function Settings({ onBack, storeId }) {
             onChange={(e) => setComparePriceMarkup(e.target.value)}
           />
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-medium">
-            Shopify par "Compare at Price" is percentage se zyada hoga (taaki customer ko discount dikhe). 
+            This markup will be applied to the final price to calculate the "Compare at Price" for products.
             Example: Final Price $100 + 20% = Compare Price $120.
           </p>
         </div>
