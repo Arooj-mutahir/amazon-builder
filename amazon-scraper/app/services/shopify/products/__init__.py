@@ -365,13 +365,31 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
                     "variants": [first_variant_payload]
                 })
 
-                # ✅ 3. NAYA: Default Variant ka stock set karein
+                # ✅ 3. NAYA: Default Variant ka stock set karein (Actual Location fetch karke)
                 try:
                     first_stock = int(first_v_raw.get("stock_qty") or parent_stock_qty or 0)
                     if first_variant_inv_id:
+                        # ✅ YAHAN CHANGE: Actual location fetch karein
+                        inv_loc_query = """
+                        query getInventoryItemLocations($id: ID!) {
+                          inventoryItem(id: $id) {
+                            inventoryLevels(first: 5) {
+                              nodes { location { id name } }
+                            }
+                          }
+                        }
+                        """
+                        loc_res = await shopify_graphql(shop, access_token, inv_loc_query, {"id": first_variant_inv_id})
+                        inv_levels = (loc_res.get("data", {}).get("inventoryItem", {}).get("inventoryLevels", {}).get("nodes") or [])
+                        
+                        actual_location_id = location_id
+                        if inv_levels:
+                            actual_location_id = inv_levels[0]["location"]["id"]
+                            print(f"📍 Default variant actual location: {inv_levels[0]['location']['name']} ({actual_location_id})", flush=True)
+                        
                         await _set_inventory_quantities(shop, access_token, [{
                             "inventoryItemId": first_variant_inv_id,
-                            "locationId": location_id,
+                            "locationId": actual_location_id,
                             "quantity": first_stock
                         }])
                         print(f"📦 Set stock {first_stock} for default variant", flush=True)
