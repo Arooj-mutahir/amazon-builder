@@ -38,7 +38,32 @@ def _build_description_with_metafields(
     
     sections = []
 
-    # ── Section 1: About this item ───────────────────────────
+    # ── Section 1: Size Chart Button (ALWAYS AT THE VERY TOP) ────────
+    # Isko sabse upar rakha hai taake customer ko turant Size Chart Button dikhe,
+    # bajaye iske ke woh 30,000 characters lamba description scroll kare!
+    if size_chart_html and size_chart_html.strip():
+        clean_chart = size_chart_html.strip()
+        size_chart_button_html = (
+            "<div class='size-chart-wrapper' style='margin: 0 0 24px 0;'>\n"
+            "  <details class='size-chart-details' style='border: 2px solid #111827; border-radius: 8px; overflow: hidden; background: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.08);'>\n"
+            "    <summary role='button' class='size-chart-btn' style='cursor: pointer; padding: 14px 20px; font-weight: 700; font-size: 15px; color: #ffffff; background: #111827; display: flex; align-items: center; justify-content: space-between; list-style: none; user-select: none;'>\n"
+            "      <span style='display: inline-flex; align-items: center; gap: 10px;'>\n"
+            "        <span style='font-size: 20px;'>📏</span>\n"
+            "        <span style='font-size: 16px; letter-spacing: 0.3px;'>Size Chart / Guide</span>\n"
+            "      </span>\n"
+            "      <span style='display: inline-block; padding: 6px 16px; font-size: 13px; font-weight: 700; color: #111827; background: #ffffff; border-radius: 6px; letter-spacing: 0.3px;'>\n"
+            "        Click to View ▼\n"
+            "      </span>\n"
+            "    </summary>\n"
+            "    <div class='size-chart-content' style='padding: 16px; overflow-x: auto; background: #ffffff; border-top: 1px solid #e5e7eb;'>\n"
+            f"      {clean_chart}\n"
+            "    </div>\n"
+            "  </details>\n"
+            "</div>"
+        )
+        sections.append(size_chart_button_html)
+
+    # ── Section 2: About this item ───────────────────────────
     if bullets:
         bullet_items = "\n".join(
             f"  <li>{_escape(str(b).strip())}</li>"
@@ -50,7 +75,7 @@ def _build_description_with_metafields(
                 f"<ul>\n{bullet_items}\n</ul>"
             )
 
-    # ── Section 2: Product Description ───────────────────────
+    # ── Section 3: Product Description ───────────────────────
     desc = _sanitize_amazon_description(description_html or "")
     if desc:
         desc = re.sub(
@@ -67,29 +92,6 @@ def _build_description_with_metafields(
                 "<h3>Product Description</h3>\n"
                 f"{desc}"
             )
-
-    # ✅ NAYA: Size Chart ko Description mein Interactive Button ke roop mein add karein
-    if size_chart_html and size_chart_html.strip():
-        clean_chart = size_chart_html.strip()
-        size_chart_button_html = (
-            "<div class='size-chart-wrapper' style='margin: 22px 0;'>\n"
-            "  <details class='size-chart-details' style='border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05);'>\n"
-            "    <summary role='button' class='size-chart-btn' style='cursor: pointer; padding: 12px 18px; font-weight: 700; font-size: 15px; color: #111827; background: #f3f4f6; display: flex; align-items: center; justify-content: space-between; border-radius: 6px; list-style: none; user-select: none; border-bottom: 1px solid #e5e7eb;'>\n"
-            "      <span style='display: inline-flex; align-items: center; gap: 8px;'>\n"
-            "        <span style='font-size: 18px;'>📏</span>\n"
-            "        <span>Size Chart / Guide</span>\n"
-            "      </span>\n"
-            "      <span style='display: inline-block; padding: 6px 14px; font-size: 13px; font-weight: 700; color: #ffffff; background: #111827; border-radius: 6px; letter-spacing: 0.3px;'>\n"
-            "        View Size Chart ▾\n"
-            "      </span>\n"
-            "    </summary>\n"
-            "    <div class='size-chart-content' style='padding: 16px; overflow-x: auto; background: #ffffff;'>\n"
-            f"      {clean_chart}\n"
-            "    </div>\n"
-            "  </details>\n"
-            "</div>"
-        )
-        sections.append(size_chart_button_html)
 
     # ── Section 4: Product Specifications ─────────────────────
     if details:
