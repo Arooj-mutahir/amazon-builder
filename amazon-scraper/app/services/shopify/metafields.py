@@ -38,6 +38,7 @@ def _build_description_with_metafields(
     
     sections = []
 
+    # ── Section 1: About this item ───────────────────────────
     if bullets:
         bullet_items = "\n".join(
             f"  <li>{_escape(str(b).strip())}</li>"
@@ -49,6 +50,7 @@ def _build_description_with_metafields(
                 f"<ul>\n{bullet_items}\n</ul>"
             )
 
+    # ── Section 2: Product Description ───────────────────────
     desc = _sanitize_amazon_description(description_html or "")
     if desc:
         desc = re.sub(
@@ -66,9 +68,15 @@ def _build_description_with_metafields(
                 f"{desc}"
             )
 
-    # ✅ Size Chart ab description mein nahi jayega (metafield se handle hoga)
-    # Isliye Section 3 hata diya hai
+    # ✅ NAYA: Size Chart ko Description mein add karein
+    if size_chart_html and size_chart_html.strip():
+        clean_chart = size_chart_html.strip()
+        sections.append(
+            "<h3>Size Chart</h3>\n"
+            f"<div style='overflow-x: auto; margin: 10px 0;'>{clean_chart}</div>"
+        )
 
+    # ── Section 4: Product Specifications ─────────────────────
     if details:
         rows = []
         for key, value in list(details.items())[:20]:
@@ -96,6 +104,7 @@ def _build_description_with_metafields(
                 f"{table_html}"
             )
 
+    # ── Section 5: Customer Reviews ───────────────────────────
     if reviews:
         cards_html = []
         for r in reviews[:15]:
@@ -216,16 +225,8 @@ async def set_product_metafields_smart(
 
     metafields_payload = []
     
-    # ✅ NAYA: Size Chart ko alag se handle karein (rich_text_field)
-    size_chart_value = raw_details.pop("size_chart", None)
-    if size_chart_value and str(size_chart_value).strip():
-        metafields_payload.append({
-            "ownerId":   product_id,
-            "namespace": "custom",
-            "key":       "size_chart",
-            "type":      "rich_text_field",  # ✅ HTML ke liye rich_text
-            "value":     str(size_chart_value).strip(),
-        })
+    # ✅ NAYA: size_chart ko metafields se hata dein (ab description mein aayega)
+    raw_details.pop("size_chart", None)
 
     for key, value in list(raw_details.items())[:20]:
         if not value or not str(value).strip():
