@@ -18,7 +18,7 @@ from app.worker.stock_utils import _get_availability, _resolve_stock
 async def _background_fetch_and_push(
     amazon_url: str, shop_domain: str, store_id: int, 
     markup, markup_type, extra_percent, tax_rate, 
-    compare_price_markup: float = 0.0, # ✅ NAYA PARAMETER
+    compare_price_markup: float = 0.0,
     collection_ids: list = None
 ):
     db = SessionLocal()
@@ -42,6 +42,8 @@ async def _background_fetch_and_push(
         try:
             main_data = await get_shopify_product_data(asin_quick, default_stock_qty=default_stock_qty)
             print(f"✅ Bridge Data Fetched: {str(main_data.get('title'))[:60]}...", flush=True)
+            # ✅ NAYA: Size Chart check karein
+            print(f"📏 Size Chart Length: {len(main_data.get('size_chart') or '')}", flush=True)
         except Exception as e:
             print(f"❌ Bridge Fetch fail: {e}", flush=True); traceback.print_exc(); return
 
@@ -105,7 +107,7 @@ async def _background_fetch_and_push(
                 final_tags=final_tags, extracted_categories=extracted_categories, 
                 shopify_payload=shopify_payload, shop_domain=shop_domain, collection_ids=collection_ids, 
                 db=db, default_stock_qty=default_stock_qty,
-                compare_price_markup=compare_price_markup  # ✅ PASS KAREIN
+                compare_price_markup=compare_price_markup
             )
         else:
             print(f"🆕 Creating SINGLE-VARIANT product...", flush=True)
@@ -114,7 +116,7 @@ async def _background_fetch_and_push(
                 user_markup=user_markup, user_markup_type=user_markup_type, user_extra=user_extra, user_tax=user_tax,
                 final_tags=final_tags, extracted_categories=extracted_categories, 
                 shopify_payload=shopify_payload, shop_domain=shop_domain, db=db, default_stock_qty=default_stock_qty,
-                compare_price_markup=compare_price_markup  # ✅ PASS KAREIN
+                compare_price_markup=compare_price_markup
             )
             
     except Exception as e:
