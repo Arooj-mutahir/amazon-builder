@@ -75,7 +75,32 @@ def _extract_clean_description(html_doc: str, fallback_desc: str = "") -> str:
                 r'age_range_description|brand_name)',
                 text_only, re.IGNORECASE,
             ):
-                text_chunk = candidate
+                # ── CSS/JS contamination check ──────────────────────────────
+                css_js_signatures = [
+                    r'[a-zA-Z][\w-]+\s*:\s*\d+(?:px|em|rem|%|vh|vw)',   # CSS: prop: 12px
+                    r'[a-zA-Z][\w-]+\s*:\s*#[0-9a-fA-F]{3,6}\b',         # CSS: color: #fff
+                    r'@media\s*[\(\{]',                                    # @media queries
+                    r'\bgrid[-_]gap\b|\bgrid[-_]template\b|\bflex[-_]wrap\b',
+                    r'\bborder[-_]radius\b|\bbox[-_]shadow\b|\bz[-_]index\s*:',
+                    r'\brgba?\s*\(',                                        # rgba()/rgb()
+                    r'\bvar\s+[A-Z_]{3,}\s*=',                            # JS: var SOMETHING =
+                    r'\bfunction\s+\w+\s*\([^)]*\)\s*\{',                 # JS: function name() {
+                    r'\.prototype\.',                                       # JS prototype
+                    r'\bwindow\.location\b',                               # JS location
+                    r'\bdocument\.getElementById\b',                       # JS DOM
+                    r'\$\([\"\']#',                                        # jQuery selector
+                ]
+                css_js_hits = sum(
+                    1 for pat in css_js_signatures
+                    if re.search(pat, text_only, re.IGNORECASE)
+                )
+                if css_js_hits >= 3:
+                    logger.warning(
+                        f"CSS/JS contamination detected in #productDescription "
+                        f"({css_js_hits} hits) — skipping text_chunk"
+                    )
+                else:
+                    text_chunk = candidate
 
     # STEP 2: #aplus_feature_div se SIRF IMAGES/VIDEOS
     aplus_images = []
@@ -153,6 +178,25 @@ def _extract_clean_description(html_doc: str, fallback_desc: str = "") -> str:
             '', desc_chunk, flags=re.DOTALL | re.IGNORECASE,
         )
         desc_chunk = re.sub(r'<(?:link|input)[^>]*>', '', desc_chunk, flags=re.IGNORECASE)
+
+        # ── EARLY CSS BLOCK STRIPPER ──────────────────────────────────────
+        # Strip CSS rule blocks: selector { ... } (up to 800 chars inside)
+        for _ in range(5):
+            desc_chunk = re.sub(
+                r'[.#]?[a-zA-Z][\w\s,.*#>+~[\]:()-]{0,120}\{[^{}]{0,800}\}',
+                '', desc_chunk, flags=re.DOTALL,
+            )
+        # Strip CSS property: value; lines (not inside HTML tags)
+        desc_chunk = re.sub(
+            r'(?<!["\'])(?:^|(?<=\s))[a-zA-Z][\w-]+\s*:\s*[^;{}<\n"\']{1,150};',
+            ' ', desc_chunk, flags=re.MULTILINE,
+        )
+        # Strip @media / @keyframes / @font-face blocks
+        desc_chunk = re.sub(
+            r'@(?:media|keyframes|font-face|supports|charset|import)[^{]*\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}',
+            '', desc_chunk, flags=re.DOTALL | re.IGNORECASE,
+        )
+        # ─────────────────────────────────────────────────────────────────
 
         desc_chunk = re.sub(r'<!--.*?-->', '', desc_chunk, flags=re.DOTALL)
         desc_chunk = re.sub(r'!-{2,}[^\n]*', '', desc_chunk)
@@ -394,6 +438,13 @@ def _extract_clean_description(html_doc: str, fallback_desc: str = "") -> str:
         "serializedPayload", "generatePayload", "DESKTOP_METRIC_PREFIX",
         "CardsClient", "show up to", "/p&gt;", "/h4&gt;", "/p>", "/h4>",
         "&gt;", "&lt;",
+        # CSS/JS residue patterns
+        "border-right-width", "border-left-width", "border-top-width",
+        "@media (", "@media(", "grid-gap:", "grid-template:",
+        "box-shadow:", "z-index:", "flex-wrap:", ".prototype.",
+        "window.shopify", "document.getElementById", "rgba(",
+        "background-color:", "font-family:", "padding-top:",
+        "margin-left:", "margin-right:", "text-align: center",
     ]
     if any(sig in desc_chunk for sig in junk_signatures):
         logger.warning(
