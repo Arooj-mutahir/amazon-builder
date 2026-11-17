@@ -19,6 +19,15 @@ async def process_multi_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
+    # ✅ NAYA: Size Chart ko Description mein jodein
+    size_chart_html = shopify_payload.get("size_chart") or ""
+    base_desc = shopify_payload.get("description") or ""
+    
+    if size_chart_html:
+        combined_desc = f"{base_desc}\n\n<h3>Size Chart</h3>\n{size_chart_html}"
+        shopify_payload["description"] = combined_desc
+        print(f"📏 Size chart appended to description", flush=True)
+
     # ✅ Shopify par product create karein
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),

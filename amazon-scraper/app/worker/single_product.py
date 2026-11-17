@@ -9,7 +9,7 @@ from app.worker.stock_utils import _get_availability, _resolve_stock
 async def process_single_variant(
     store, main_data, user_markup, user_markup_type, user_extra, user_tax, 
     final_tags, extracted_categories, shopify_payload, shop_domain, db, default_stock_qty,
-    compare_price_markup: float = 0.0  # ✅ NAYA PARAMETER
+    compare_price_markup: float = 0.0
 ):
     new_product = None
     existing = db.query(Product).filter(Product.asin == main_data["asin"]).first()
@@ -78,11 +78,22 @@ async def process_single_variant(
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
+    # ============================================
+    # ✅ NAYA: Size Chart ko Description mein jodein
+    # ============================================
+    size_chart_html = shopify_payload.get("size_chart") or ""
+    base_desc = shopify_payload.get("description") or ""
+    
+    if size_chart_html:
+        combined_desc = f"{base_desc}\n\n<h3>Size Chart</h3>\n{size_chart_html}"
+        shopify_payload["description"] = combined_desc
+        print(f"📏 Size chart appended to description", flush=True)
+
     # ✅ Create product with fresh token
     result = await create_shopify_product(
         shop=shop_domain, 
         access_token=fresh_token,
-        product_data=shopify_payload  # ✅ Ab isme compare_at_price bhi hai
+        product_data=shopify_payload  # ✅ Ab isme compare_at_price aur size_chart bhi hai
     )
 
     if result and "errors" not in result:
