@@ -11,22 +11,13 @@ async def process_multi_variant(
     compare_price_markup: float = 0.0
 ):
     
-    # ✅ Compare Price calculate karein
+    # ✅ Compare Price
     compare_price = None
     if compare_price_markup > 0:
         final_price = shopify_payload.get("price", 0.0)
         compare_price = final_price * (1 + (compare_price_markup / 100.0))
-        print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
+        print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
-
-    # ✅ NAYA: Size Chart ko Description mein jodein
-    size_chart_html = shopify_payload.get("size_chart") or ""
-    base_desc = shopify_payload.get("description") or ""
-    
-    if size_chart_html:
-        combined_desc = f"{base_desc}\n\n<h3>Size Chart</h3>\n{size_chart_html}"
-        shopify_payload["description"] = combined_desc
-        print(f"📏 Size chart appended to description", flush=True)
 
     # ✅ Shopify par product create karein
     result = await create_shopify_product_with_variants(
@@ -52,11 +43,10 @@ async def process_multi_variant(
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
     # ==========================================
-    # ✅ NAYA: PARENT PRODUCT KO DATABASE MEIN SAVE KAREIN
+    # ✅ PARENT PRODUCT DATABASE MEIN SAVE KAREIN
     # ==========================================
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
-    # Parent ki availability aur stock calculate karein
     parent_available = _get_availability(main_data)
     parent_stock_raw = main_data.get("stock_qty")
     parent_stock_qty = _resolve_stock(parent_available, parent_stock_raw, default_stock_qty)
@@ -65,7 +55,6 @@ async def process_multi_variant(
     availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
     if not new_product:
-        # Parent Product database mein nahi hai, toh create karein
         new_product = Product(
             asin=main_data["asin"], 
             parent_asin=main_data.get("parent_asin"), 
@@ -94,9 +83,8 @@ async def process_multi_variant(
             shopify_product_id=shopify_id
         )
         db.add(new_product)
-        print(f"✅ Parent product created in DB: {main_data['asin']}", flush=True)
+        print(f"✅ Parent product created in DB", flush=True)
     else:
-        # Parent Product pehle se hai, toh details update karein
         new_product.shopify_product_id = shopify_id
         new_product.shopify_store_id = store.id
         new_product.price = shopify_payload["price"]
@@ -117,18 +105,17 @@ async def process_multi_variant(
         new_product.tax_rate = user_tax
         new_product.categories = extracted_categories
         new_product.tags = final_tags
-        print(f"✅ Parent product updated in DB: {main_data['asin']}", flush=True)
+        print(f"✅ Parent product updated in DB", flush=True)
         
     db.commit()
 
     # ==========================================
-    # ✅ CHILD PRODUCTS KO DATABASE MEIN SAVE KAREIN
+    # ✅ CHILD PRODUCTS DATABASE MEIN SAVE KAREIN
     # ==========================================
     try:
         saved_variants_count = 0
         for v in clean_variants:
             v_asin = v.get("asin")
-            # Parent ASIN ko skip karein, sirf child save karein
             if not v_asin or v_asin == main_data.get("asin"):
                 continue
 
@@ -179,7 +166,7 @@ async def process_multi_variant(
             saved_variants_count += 1
 
         db.commit()
-        print(f"✅ Saved all {saved_variants_count} variants to Database as individual rows!", flush=True)
+        print(f"✅ Saved all {saved_variants_count} variants to Database!", flush=True)
 
     except Exception as e:
         print(f"⚠️ Failed to parse variant response: {e}", flush=True)
@@ -198,8 +185,15 @@ async def process_multi_variant(
         except Exception as e: 
             print(f"⚠️ Collection add failed: {e}", flush=True)
     
+    # ✅ NAYA: Metafields set karein (Size Chart included)
     try:
-        raw_details = dict(main_data.get("details") or {}); raw_details["asin"] = main_data.get("asin")
+        raw_details = dict(main_data.get("details") or {})
+        raw_details["asin"] = main_data.get("asin")
+        # ✅ Size chart ko metafield mein bhejein
+        if shopify_payload.get("size_chart"):
+            raw_details["size_chart"] = shopify_payload["size_chart"]
+            print(f"📏 Size chart added to metafields", flush=True)
+            
         if raw_details:
             await set_product_metafields_smart(shop=shop_domain, access_token=await _get_valid_access_token(store, db), product_id=shopify_id, raw_details=raw_details)
     except Exception as e:

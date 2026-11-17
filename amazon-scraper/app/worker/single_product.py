@@ -62,38 +62,24 @@ async def process_single_variant(
 
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
 
-    # ✅ FIX: Product create karne se pehle FRESH token lein (force_refresh=True)
     print(f"🔄 Refreshing token before product creation for {shop_domain}...", flush=True)
     fresh_token = await _get_valid_access_token(store, db, force_refresh=True)
     print(f"🔑 Fresh token obtained: {fresh_token[:15]}...", flush=True)
 
-    # ✅ NAYA: Compare Price calculate karein
+    # ✅ Compare Price
     final_price = shopify_payload["price"]
     compare_price = None
     if compare_price_markup > 0:
         compare_price = final_price * (1 + (compare_price_markup / 100.0))
-        print(f"🏷️ Compare Price set: ${compare_price:.2f} (Final: ${final_price:.2f} + {compare_price_markup}%)", flush=True)
-
-    # ✅ shopify_payload mein compareAtPrice add karein
+        print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ============================================
-    # ✅ NAYA: Size Chart ko Description mein jodein
-    # ============================================
-    size_chart_html = shopify_payload.get("size_chart") or ""
-    base_desc = shopify_payload.get("description") or ""
-    
-    if size_chart_html:
-        combined_desc = f"{base_desc}\n\n<h3>Size Chart</h3>\n{size_chart_html}"
-        shopify_payload["description"] = combined_desc
-        print(f"📏 Size chart appended to description", flush=True)
-
-    # ✅ Create product with fresh token
+    # ✅ Create product
     result = await create_shopify_product(
         shop=shop_domain, 
         access_token=fresh_token,
-        product_data=shopify_payload  # ✅ Ab isme compare_at_price aur size_chart bhi hai
+        product_data=shopify_payload
     )
 
     if result and "errors" not in result:
@@ -104,7 +90,7 @@ async def process_single_variant(
 
         shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
         if not shopify_id:
-            print(f"❌ No product ID returned from Shopify! Result: {result}", flush=True)
+            print(f"❌ No product ID returned from Shopify!", flush=True)
             return
 
         new_product.shopify_product_id = shopify_id
@@ -117,8 +103,15 @@ async def process_single_variant(
         except Exception as e: 
             print(f"⚠️ Auto-publish failed: {e}", flush=True)
         
+        # ✅ NAYA: Metafields set karein (Size Chart included)
         try:
-            raw_details = dict(main_data.get("details") or {}); raw_details["asin"] = main_data.get("asin")
+            raw_details = dict(main_data.get("details") or {})
+            raw_details["asin"] = main_data.get("asin")
+            # ✅ Size chart ko metafield mein bhejein
+            if shopify_payload.get("size_chart"):
+                raw_details["size_chart"] = shopify_payload["size_chart"]
+                print(f"📏 Size chart added to metafields", flush=True)
+                
             if raw_details:
                 await set_product_metafields_smart(shop=shop_domain, access_token=await _get_valid_access_token(store, db), product_id=shopify_id, raw_details=raw_details)
         except Exception as e:
