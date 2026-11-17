@@ -41,8 +41,8 @@ async def _background_fetch_and_push(
 
         try:
             main_data = await get_shopify_product_data(asin_quick, default_stock_qty=default_stock_qty)
+            # ✅ NAYA: Yahan print karein
             print(f"✅ Bridge Data Fetched: {str(main_data.get('title'))[:60]}...", flush=True)
-            # ✅ NAYA: Size Chart check karein
             print(f"📏 Size Chart Length: {len(main_data.get('size_chart') or '')}", flush=True)
         except Exception as e:
             print(f"❌ Bridge Fetch fail: {e}", flush=True); traceback.print_exc(); return
