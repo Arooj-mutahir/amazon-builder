@@ -9,33 +9,18 @@ from .client import shopify_graphql
 # ============================================================
 
 def _sanitize_amazon_description(html: str) -> str:
-    """
-    Amazon A+ content / description se JS, CSS, tracking pixels
-    aur widget junk hataata hai. Real text + safe HTML tags chhod deta hai.
-    """
     if not html:
         return ""
-
-    # 1. Poora <script>, <style>, <noscript>, <iframe> blocks remove
     html = re.sub(r'<script\b[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r'<style\b[^>]*>.*?</style>',   '', html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r'<noscript\b[^>]*>.*?</noscript>', '', html, flags=re.DOTALL | re.IGNORECASE)
     html = re.sub(r'<iframe\b[^>]*>.*?</iframe>', '', html, flags=re.DOTALL | re.IGNORECASE)
-
-    # 2. Amazon ke inline JS widget calls hataao
     html = re.sub(r'if\s*\(\s*\)\s*\{[^}]*\}', '', html)
     html = re.sub(r'P\.when\([^)]*\)\s*\.\s*execute\([^)]*\);?', '', html)
     html = re.sub(r'runtime\.registerCardFactory\([^)]*\)', '', html)
-
-    # 3. Bache hue lone CSS-rule lines hataao (e.g. ._YnVmZ_xxx{...})
     html = re.sub(r'(?m)^\s*\._[A-Za-z0-9_]+\s*\{[^}]*\}\s*$', '', html)
-
-    # 4. HTML entities decode — &lt; → <, &amp; → &
     html = _unescape(html)
-
-    # 5. Extra blank lines collapse
     html = re.sub(r'\n{3,}', '\n\n', html).strip()
-
     return html
 
 
@@ -53,7 +38,6 @@ def _build_description_with_metafields(
     
     sections = []
 
-    # ── Section 1: About this item ───────────────────────────
     if bullets:
         bullet_items = "\n".join(
             f"  <li>{_escape(str(b).strip())}</li>"
@@ -65,7 +49,6 @@ def _build_description_with_metafields(
                 f"<ul>\n{bullet_items}\n</ul>"
             )
 
-    # ── Section 2: Product Description ───────────────────────
     desc = _sanitize_amazon_description(description_html or "")
     if desc:
         desc = re.sub(
@@ -75,58 +58,17 @@ def _build_description_with_metafields(
         desc = re.sub(r'<table[^>]*>.*?</table>', '', desc, flags=re.DOTALL | re.IGNORECASE)
         desc = re.sub(r'<div[^>]*class="[^"]*brand-story[^"]*"[^>]*>.*?</div>', '', desc, flags=re.DOTALL | re.IGNORECASE)
         desc = desc.strip()
-
-        # Safety: clean ke baad sirf symbols / CSS / brackets bache ho toh section skip
         visible = re.sub(r'<[^>]+>', '', desc).strip()
         visible = re.sub(r'[\{\}\(\)\.\,\:\;_\-\s\|]+', '', visible)
-
         if len(visible) >= 20:
             sections.append(
                 "<h3>Product Description</h3>\n"
                 f"{desc}"
             )
 
-    # ── Section 3: Size Chart (BUTTON & MODAL) ───────────────
-    if size_chart_html and size_chart_html.strip():
-        clean_chart = size_chart_html.strip()
-        
-        # ✅ Button aur Modal ka HTML
-        size_chart_block = f"""
-        <div style="margin: 20px 0; text-align: center;">
-            <button id="sizeChartBtn" style="background-color: #000; color: #fff; padding: 10px 24px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 16px;">
-                📏 View Size Chart
-            </button>
-        </div>
+    # ✅ Size Chart ab description mein nahi jayega (metafield se handle hoga)
+    # Isliye Section 3 hata diya hai
 
-        <div id="sizeChartModal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6);">
-            <div style="background-color: #fff; margin: 5% auto; padding: 20px; border-radius: 8px; width: 90%; max-width: 800px; position: relative; max-height: 80vh; overflow-y: auto;">
-                <span id="closeSizeChart" style="position: absolute; right: 20px; top: 10px; font-size: 28px; font-weight: bold; cursor: pointer; color: #333;">&times;</span>
-                <h3 style="text-align: center; margin-bottom: 20px; font-size: 22px; color: #000;">Size Chart</h3>
-                <div style="overflow-x: auto;">
-                    {clean_chart}
-                </div>
-            </div>
-        </div>
-
-        <script>
-            document.addEventListener('DOMContentLoaded', function() {{
-                var modal = document.getElementById('sizeChartModal');
-                var btn = document.getElementById('sizeChartBtn');
-                var span = document.getElementById('closeSizeChart');
-
-                if (btn && modal && span) {{
-                    btn.onclick = function() {{ modal.style.display = 'block'; }}
-                    span.onclick = function() {{ modal.style.display = 'none'; }}
-                    window.onclick = function(event) {{
-                        if (event.target == modal) {{ modal.style.display = 'none'; }}
-                    }}
-                }}
-            }});
-        </script>
-        """
-        sections.append(size_chart_block)
-
-    # ── Section 4: Product Specifications ─────────────────────
     if details:
         rows = []
         for key, value in list(details.items())[:20]:
@@ -154,7 +96,6 @@ def _build_description_with_metafields(
                 f"{table_html}"
             )
 
-    # ── Section 5: Customer Reviews ───────────────────────────
     if reviews:
         cards_html = []
         for r in reviews[:15]:
@@ -252,10 +193,6 @@ def _build_description_with_metafields(
 async def set_product_metafields_smart(
     shop: str, access_token: str, product_id: str, raw_details: dict
 ):
-    """
-    Push product details to Shopify as metafields (namespace: amazon_details).
-    Capped at 20 items to stay safely under Shopify's 25-metafield-per-call limit.
-    """
     if not raw_details:
         return
 
@@ -278,6 +215,18 @@ async def set_product_metafields_smart(
         product_id = f"gid://shopify/Product/{product_id}"
 
     metafields_payload = []
+    
+    # ✅ NAYA: Size Chart ko alag se handle karein (rich_text_field)
+    size_chart_value = raw_details.pop("size_chart", None)
+    if size_chart_value and str(size_chart_value).strip():
+        metafields_payload.append({
+            "ownerId":   product_id,
+            "namespace": "custom",
+            "key":       "size_chart",
+            "type":      "rich_text_field",  # ✅ HTML ke liye rich_text
+            "value":     str(size_chart_value).strip(),
+        })
+
     for key, value in list(raw_details.items())[:20]:
         if not value or not str(value).strip():
             continue
