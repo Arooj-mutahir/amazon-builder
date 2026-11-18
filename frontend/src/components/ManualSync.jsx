@@ -2,62 +2,55 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { RefreshCw, Loader2, Power } from 'lucide-react';
+import Loader from './Loader';
 
-// ✅ Props mein isAutoSyncEnabled aur onToggleAutoSync receive karein
 export default function ManualSync({ 
   API_URL, 
   selectedStoreId, 
   isAutoSyncEnabled, 
+  isAutoSyncLoading, // ✅ App.jsx se loading state
   onToggleAutoSync 
 }) {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [updatingToggle, setUpdatingToggle] = useState(false);
 
-  // Handle Auto-Sync Toggle
   const handleToggle = async () => {
     if (updatingToggle) return;
     setUpdatingToggle(true);
-    
-    // App.jsx wala function call karein jo state update karega
-    await onToggleAutoSync(); 
-    
+    await onToggleAutoSync();
     setUpdatingToggle(false);
   };
 
-  // Handle Manual Sync
   const handleManualSync = async () => {
-    if (!selectedStoreId) {
-      alert("Store ID not found. Please connect a store.");
-      return;
-    }
-
+    if (!selectedStoreId) return;
     setSyncing(true);
     setMessage('');
-    
     try {
       const res = await axios.post(`${API_URL}/manual-sync?store_id=${selectedStoreId}`);
       setMessage(res.data.message || "Sync started successfully!");
     } catch (err) {
-      console.error(err);
       setMessage("Failed to start sync. Please check backend logs.");
     } finally {
       setSyncing(false);
     }
   };
 
+  // ✅ Loader dikhayein jab auto-sync status load ho raha ho
+  if (isAutoSyncLoading) {
+    return <Loader message="Loading sync settings..." />;
+  }
+
   return (
     <div className="flex flex-col p-4 max-w-5xl mx-auto space-y-6">
-      
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Sync Management</h1>
         <p className="text-sm text-gray-500 mt-1">Manage automated background syncing and trigger manual updates.</p>
       </div>
 
-      {/* 2 Columns Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
         
-        {/* 1. Auto-Sync Toggle Card */}
+        {/* Auto-Sync Toggle Card */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col justify-between h-full">
           <div>
             <div className="flex justify-between items-start mb-4">
@@ -94,23 +87,20 @@ export default function ManualSync({
           </div>
         </div>
 
-        {/* 2. Manual Sync Card */}
+        {/* Manual Sync Card */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col justify-between h-full text-center">
           <div>
             <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4 border border-gray-100">
               <RefreshCw size={28} className={syncing ? "animate-spin text-blue-600" : "text-blue-600"} />
             </div>
-
             <h2 className="text-lg font-bold text-gray-900 mb-2">Manual Price & Inventory Sync</h2>
             <p className="text-sm text-gray-500 mb-4 leading-relaxed">
               Instantly fetch the latest prices and stock from Amazon and update your Shopify store. Bypasses the 2 AM cron job.
             </p>
-
             <p className="text-xs text-gray-400 mb-6 bg-gray-50 inline-block px-3 py-1 rounded-full border border-gray-100">
               Target Store ID: <span className="text-gray-700 font-mono font-medium">{selectedStoreId || 'Not Connected'}</span>
             </p>
           </div>
-
           <div>
             <button
               onClick={handleManualSync}
@@ -129,7 +119,6 @@ export default function ManualSync({
                 "Run Manual Sync Now"
               )}
             </button>
-
             {message && (
               <div className={`mt-4 p-3 rounded-lg text-sm font-medium ${
                 message.includes('Failed') ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-700 border border-green-100'
@@ -139,7 +128,6 @@ export default function ManualSync({
             )}
           </div>
         </div>
-
       </div>
     </div>
   );
