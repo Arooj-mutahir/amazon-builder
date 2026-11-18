@@ -10,14 +10,14 @@ export default function DashboardView({
   markup, markupType, extraPercent, taxRate,
   API_URL,
   selectedStoreId,
-  onOpenImportModal // ✅ Header se import modal kholne ke liye prop (agar pass kiya hai)
+  onOpenImportModal 
 }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // Products fetch karne ka logic
+  // ✅ STORE ID SAY PRODUCTS FETCH KARNE KA LOGIC
   useEffect(() => {
     const fetchProducts = async () => {
       if (!selectedStoreId) {
@@ -27,11 +27,22 @@ export default function DashboardView({
       
       setLoading(true);
       try {
-        // Yahan apna actual products fetch karne wala API endpoint daalein
+        // 🔴 YAHAN APNA BACKEND ENDPOINT DAALEIN (Jo saare products return karta ho)
+        // Misaal ke taur par: /products?store_id=123 ya /all-products?store_id=123
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
-        setProducts(res.data.products || res.data || []);
+        
+        // Data mapping: Check karein backend direct array bhej raha hai ya object ke andar
+        if (Array.isArray(res.data)) {
+          setProducts(res.data);
+        } else if (res.data && res.data.products) {
+          setProducts(res.data.products);
+        } else if (res.data && res.data.data) {
+          setProducts(res.data.data);
+        } else {
+          setProducts([]);
+        }
       } catch (err) {
-        console.error("Failed to fetch products", err);
+        console.error("Failed to fetch products for store:", selectedStoreId, err);
       } finally {
         setLoading(false);
       }
@@ -49,13 +60,17 @@ export default function DashboardView({
 
   // Filter aur Search Logic
   const filteredProducts = products.filter(p => {
-    const matchesSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.asin?.toLowerCase().includes(searchQuery.toLowerCase());
+    const title = p.title || p.name || '';
+    const asin = p.asin || '';
+    const status = p.is_available ? 'Active' : (p.status || 'Draft');
+
+    const matchesSearch = title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          asin.toLowerCase().includes(searchQuery.toLowerCase());
     
     if (activeFilter === 'All') return matchesSearch;
-    if (activeFilter === 'Active') return matchesSearch && p.status === 'Active';
-    if (activeFilter === 'Out of Stock') return matchesSearch && p.status === 'Out of Stock';
-    if (activeFilter === 'Draft') return matchesSearch && p.status === 'Draft';
+    if (activeFilter === 'Active') return matchesSearch && status === 'Active';
+    if (activeFilter === 'Out of Stock') return matchesSearch && (status === 'Out of Stock' || p.is_available === false);
+    if (activeFilter === 'Draft') return matchesSearch && status === 'Draft';
     return matchesSearch;
   });
 
@@ -81,10 +96,10 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* 2. All Products Section (New Table) */}
+      {/* 2. All Products Section */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         
-        {/* Table Header (Title + Import Button) */}
+        {/* Table Header */}
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">All Products</h2>
@@ -154,78 +169,92 @@ export default function DashboardView({
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="p-12 text-center flex flex-col items-center justify-center text-gray-500">
-                    <Package size={40} className="text-gray-300 mb-3" />
-                    <p>No products found.</p>
+                  <td colSpan="8" className="p-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-gray-500">
+                      <Package size={40} className="text-gray-300 mb-3" />
+                      <p className="text-base font-medium">No products found for this store.</p>
+                      {searchQuery || activeFilter !== 'All' ? (
+                        <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters.</p>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-gray-50/50 transition-colors group">
-                    <td className="p-4 text-center">
-                      <input type="checkbox" className="rounded border-gray-300" />
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
-                          {/* Image agar available ho toh show karein */}
-                          {product.image ? (
-                            <img src={product.image} alt="" className="w-full h-full object-cover rounded-lg" />
-                          ) : (
-                            <Package size={20} className="text-gray-400" />
-                          )}
+                filteredProducts.map((product) => {
+                  const title = product.title || product.name || 'Unknown Product';
+                  const asin = product.asin || 'N/A';
+                  const amazonPrice = product.amazon_price || product.price || '0.00';
+                  const shopifyPrice = product.shopify_price || product.price || '0.00';
+                  const stock = product.stock !== undefined ? product.stock : (product.is_available ? 10 : 0);
+                  const isActive = product.is_available !== undefined ? product.is_available : (product.status === 'Active');
+                  const statusText = isActive ? 'Active' : (stock === 0 ? 'Out of Stock' : 'Draft');
+
+                  return (
+                    <tr key={product.id || product.asin} className="hover:bg-gray-50/50 transition-colors group">
+                      <td className="p-4 text-center">
+                        <input type="checkbox" className="rounded border-gray-300" />
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
+                            {product.image ? (
+                              <img src={product.image} alt="" className="w-full h-full object-cover rounded-lg" />
+                            ) : (
+                              <Package size={20} className="text-gray-400" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate" title={title}>
+                              {title}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Auto-Sync {product.auto_sync !== false ? 'ON' : 'OFF'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate">
-                            {product.title}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            Auto-Sync {product.auto_sync ? 'ON' : 'OFF'}
-                          </p>
+                      </td>
+                      <td className="p-4">
+                        <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200 font-mono">
+                          {asin}
+                        </span>
+                      </td>
+                      <td className="p-4 text-sm text-gray-600">
+                        ${amazonPrice}
+                      </td>
+                      <td className="p-4 text-sm font-semibold text-gray-900">
+                        ${shopifyPrice}
+                      </td>
+                      <td className="p-4 text-sm">
+                        <span className={stock === 0 ? 'text-red-500 font-medium' : 'text-gray-700'}>
+                          {stock} in stock
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
+                          ${statusText === 'Active' ? 'bg-green-100 text-green-700' : 
+                            statusText === 'Out of Stock' ? 'bg-red-100 text-red-700' : 
+                            'bg-blue-100 text-blue-700'}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusText === 'Active' ? 'bg-green-500' : statusText === 'Out of Stock' ? 'bg-red-500' : 'bg-blue-500'}`}></span>
+                          {statusText}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="Sync Product">
+                            <RefreshCw size={16} />
+                          </button>
+                          <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="View on Shopify">
+                            <ExternalLink size={16} />
+                          </button>
+                          <button className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 transition-all" title="Delete">
+                            <Trash2 size={16} />
+                          </button>
                         </div>
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200 font-mono">
-                        {product.asin}
-                      </span>
-                    </td>
-                    <td className="p-4 text-sm text-gray-600">
-                      ${product.amazon_price || '0.00'}
-                    </td>
-                    <td className="p-4 text-sm font-semibold text-gray-900">
-                      ${product.shopify_price || '0.00'}
-                    </td>
-                    <td className="p-4 text-sm">
-                      <span className={product.stock === 0 ? 'text-red-500 font-medium' : 'text-gray-700'}>
-                        {product.stock || 0} in stock
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-                        ${product.status === 'Active' ? 'bg-green-100 text-green-700' : 
-                          product.status === 'Out of Stock' ? 'bg-red-100 text-red-700' : 
-                          'bg-blue-100 text-blue-700'}`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${product.status === 'Active' ? 'bg-green-500' : product.status === 'Out of Stock' ? 'bg-red-500' : 'bg-blue-500'}`}></span>
-                        {product.status || 'Draft'}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="Sync Product">
-                          <RefreshCw size={16} />
-                        </button>
-                        <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="View on Shopify">
-                          <ExternalLink size={16} />
-                        </button>
-                        <button className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 transition-all" title="Delete">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
