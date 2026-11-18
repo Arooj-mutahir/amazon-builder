@@ -10,17 +10,20 @@ export default function ImportModal({
   markup,
   markupType,
   extraPercent,
-  taxRate
+  taxRate,
+  // ✅ Naye props receive karein App.jsx se
+  isAutoSyncEnabled,
+  onToggleAutoSync
 }) {
   const [url, setUrl] = useState('');
-  const [autoSync, setAutoSync] = useState(true);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (url.trim()) {
-      onImport(url, autoSync);
+      // onImport mein url aur autoSync dono pass karein
+      onImport(url, isAutoSyncEnabled);
     }
   };
 
@@ -76,21 +79,25 @@ export default function ImportModal({
             </div>
           </div>
 
-          {/* Removed Default Shopify Status Dropdown, Centered Auto-Sync Toggle */}
+          {/* ✅ Auto-Sync Toggle (Synced with App.jsx state) */}
           <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 flex justify-between items-center">
             <div>
               <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
               <p className="text-xs text-gray-500">Price & stock tracking</p>
             </div>
             <div 
-              onClick={() => setAutoSync(!autoSync)}
-              className={`w-10 h-5 rounded-full cursor-pointer relative transition-colors ${autoSync ? 'bg-green-600' : 'bg-gray-300'}`}
+              onClick={onToggleAutoSync}
+              className={`w-10 h-5 rounded-full cursor-pointer relative transition-colors ${
+                isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
+              }`}
             >
-              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${autoSync ? 'left-5' : 'left-0.5'}`}></div>
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                isAutoSyncEnabled ? 'left-5' : 'left-0.5'
+              }`}></div>
             </div>
           </div>
 
-          {/* Applied Pricing Rule (Dynamic based on user settings) */}
+          {/* Applied Pricing Rule */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex justify-between items-center text-sm">
             <span className="text-gray-600">Applied Pricing Rule:</span>
             <span className="font-semibold text-gray-900">{getPricingRuleText()}</span>

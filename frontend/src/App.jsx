@@ -38,6 +38,9 @@ class ErrorBoundary extends Component {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // ✅ NAYA STATE: Auto-Sync status (Dono components ke liye common)
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(true);
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -125,7 +128,38 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
 
-  const handleModalImport = useCallback(async (importUrl) => {
+  // ✅ FETCH AUTO-SYNC STATUS
+  useEffect(() => {
+    const fetchAutoSyncStatus = async () => {
+      if (!selectedStoreId) return;
+      try {
+        const res = await axios.get(`${API_URL}/auto-sync/status?store_id=${selectedStoreId}`);
+        setIsAutoSyncEnabled(res.data.enabled);
+      } catch (err) {
+        console.error("Failed to fetch auto-sync status", err);
+      }
+    };
+    fetchAutoSyncStatus();
+  }, [API_URL, selectedStoreId]);
+
+  // ✅ TOGGLE FUNCTION
+  const handleToggleAutoSync = useCallback(async () => {
+    const newState = !isAutoSyncEnabled;
+    setIsAutoSyncEnabled(newState);
+
+    try {
+      await axios.post(`${API_URL}/auto-sync/toggle?store_id=${selectedStoreId}`, {
+        enabled: newState
+      });
+    } catch (err) {
+      console.error("Failed to update auto-sync", err);
+      setIsAutoSyncEnabled(!newState);
+      alert("Failed to update Auto-Sync setting.");
+    }
+  }, [isAutoSyncEnabled, API_URL, selectedStoreId]);
+
+  // ✅ FIX: autoSync argument receive karein
+  const handleModalImport = useCallback(async (importUrl, autoSync = true) => {
     if (!importUrl) {
       setError("Please enter a valid URL");
       return;
@@ -148,7 +182,8 @@ export default function App() {
         extra_percent: parseFloat(extraPercent),
         tax_rate: parseFloat(taxRate),
         compare_price_markup: parseFloat(comparePriceMarkup),
-        collection_ids: selectedCollections
+        collection_ids: selectedCollections,
+        auto_sync: autoSync // ✅ Backend ko bhejein
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
@@ -171,12 +206,10 @@ export default function App() {
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
     
-    // ✅ Direct tab change, no delay
     setActiveTab('dashboard');
     window.history.pushState({}, '', '/');
   }, []);
 
-  // ✅ Smooth Tab Change (Direct without artificial delay)
   const handleTabChange = useCallback((tab) => {
     if (tab === activeTab) return;
     
@@ -193,7 +226,6 @@ export default function App() {
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
 
       <main className="flex-1 flex flex-col overflow-y-auto">
-        {/* Top Header */}
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex flex-col">
             <h2 className="text-xl font-bold capitalize">{activeTab.replace('-', ' ')}</h2>
@@ -219,7 +251,6 @@ export default function App() {
           </div>
         </header>
 
-        {/* Page Content */}
         <div className="p-8 relative flex-1">
           <ErrorBoundary>
             {activeTab === 'dashboard' && (
@@ -237,7 +268,12 @@ export default function App() {
             )}
 
             {activeTab === 'manual-sync' && (
-              <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
+              <ManualSync 
+                API_URL={API_URL} 
+                selectedStoreId={selectedStoreId} 
+                isAutoSyncEnabled={isAutoSyncEnabled} 
+                onToggleAutoSync={handleToggleAutoSync} 
+              />
             )}
 
             {activeTab === 'settings' && (
@@ -252,7 +288,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Global Import Modal */}
       <ImportModal
         key={modalKey} 
         isOpen={isModalOpen}
@@ -268,6 +303,8 @@ export default function App() {
         collections={collections}
         selectedCollections={selectedCollections}
         setSelectedCollections={setSelectedCollections}
+        isAutoSyncEnabled={isAutoSyncEnabled} 
+        onToggleAutoSync={handleToggleAutoSync} 
       />
     </div>
   );

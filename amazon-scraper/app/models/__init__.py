@@ -20,12 +20,14 @@ class ShopifyStore(Base):
     default_extra_percent = Column(Float, default=0.0)       
     default_tax_rate = Column(Float, default=0.0)            
     
-    # ✅ FIX 1: Duplicate default_stock_qty hataya gaya
     default_stock_qty = Column(Integer, default=100)          
     shopify_location_id = Column(String, nullable=True)       
 
-    # ✅ FIX 2: Auto-Sync ke liye naya column add kiya gaya
+    # ✅ Auto-Sync ke liye
     auto_sync_enabled = Column(Boolean, default=True)         
+
+    # ✅ NAYA: Compare Price Markup (Jiski wajah se error aa raha tha)
+    default_compare_price_markup = Column(Float, default=0.0) 
 
 
 class Product(Base):

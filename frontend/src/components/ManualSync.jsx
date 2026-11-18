@@ -1,56 +1,28 @@
 // src/components/ManualSync.jsx
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
 import { RefreshCw, Loader2, Power } from 'lucide-react';
-import Loader from './Loader'; // ✅ Loader Import kiya
 
-export default function ManualSync({ API_URL, selectedStoreId }) {
-  // Manual Sync States
+// ✅ Props mein isAutoSyncEnabled aur onToggleAutoSync receive karein
+export default function ManualSync({ 
+  API_URL, 
+  selectedStoreId, 
+  isAutoSyncEnabled, 
+  onToggleAutoSync 
+}) {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
-
-  // Auto Sync States
-  const [isEnabled, setIsEnabled] = useState(true);
-  const [loadingStatus, setLoadingStatus] = useState(true);
   const [updatingToggle, setUpdatingToggle] = useState(false);
-
-  // Fetch Auto-Sync status on load
-  useEffect(() => {
-    const fetchAutoSyncStatus = async () => {
-      if (!selectedStoreId) {
-        setLoadingStatus(false);
-        return;
-      }
-      try {
-        const res = await axios.get(`${API_URL}/auto-sync/status?store_id=${selectedStoreId}`);
-        setIsEnabled(res.data.enabled);
-      } catch (err) {
-        console.error("Failed to fetch auto-sync status", err);
-      } finally {
-        setLoadingStatus(false);
-      }
-    };
-    fetchAutoSyncStatus();
-  }, [API_URL, selectedStoreId]);
 
   // Handle Auto-Sync Toggle
   const handleToggle = async () => {
     if (updatingToggle) return;
-    const newState = !isEnabled;
-    setIsEnabled(newState);
     setUpdatingToggle(true);
-
-    try {
-      await axios.post(`${API_URL}/auto-sync/toggle?store_id=${selectedStoreId}`, {
-        enabled: newState
-      });
-    } catch (err) {
-      console.error("Failed to update auto-sync", err);
-      setIsEnabled(!newState);
-      alert("Failed to update Auto-Sync setting.");
-    } finally {
-      setUpdatingToggle(false);
-    }
+    
+    // App.jsx wala function call karein jo state update karega
+    await onToggleAutoSync(); 
+    
+    setUpdatingToggle(false);
   };
 
   // Handle Manual Sync
@@ -74,11 +46,6 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
     }
   };
 
-  // ✅ FIX: Agar data load ho raha hai toh pura page loader dikhayein
-  if (loadingStatus) {
-    return <Loader message="Loading sync settings..." />;
-  }
-
   return (
     <div className="flex flex-col p-4 max-w-5xl mx-auto space-y-6">
       
@@ -87,7 +54,7 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
         <p className="text-sm text-gray-500 mt-1">Manage automated background syncing and trigger manual updates.</p>
       </div>
 
-      {/* ✅ 2 Columns Layout */}
+      {/* 2 Columns Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
         
         {/* 1. Auto-Sync Toggle Card */}
@@ -106,11 +73,11 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
                 onClick={handleToggle}
                 disabled={updatingToggle}
                 className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-                  isEnabled ? 'bg-[#008060]' : 'bg-gray-300'
+                  isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
                 } ${updatingToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  isEnabled ? 'translate-x-6' : 'translate-x-1'
+                  isAutoSyncEnabled ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
             </div>
@@ -119,9 +86,9 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
           <div className="border-t border-gray-100 pt-4 mt-4 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-500">Status</span>
             <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-[#008060]' : 'bg-gray-400'}`}></span>
-              <span className={`text-sm font-bold ${isEnabled ? 'text-[#008060]' : 'text-gray-500'}`}>
-                {isEnabled ? 'Enabled' : 'Disabled'}
+              <span className={`w-2 h-2 rounded-full ${isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-400'}`}></span>
+              <span className={`text-sm font-bold ${isAutoSyncEnabled ? 'text-[#008060]' : 'text-gray-500'}`}>
+                {isAutoSyncEnabled ? 'Enabled' : 'Disabled'}
               </span>
             </div>
           </div>
