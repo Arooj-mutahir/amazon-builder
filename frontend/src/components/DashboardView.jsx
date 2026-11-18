@@ -4,7 +4,6 @@ import axios from 'axios';
 import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
-import AutoSyncToggle from './AutoSyncToggle'; // ✅ Naya Import
 
 export default function DashboardView({ 
   collections, selectedCollections, setSelectedCollections,
@@ -19,26 +18,19 @@ export default function DashboardView({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // ✅ SAARE PRODUCTS FETCH KARNE KA LOGIC
   useEffect(() => {
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
         setLoading(false);
         return;
       }
-      
       setLoading(true);
       setError('');
       try {
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
-        
-        if (Array.isArray(res.data)) {
-          setProducts(res.data);
-        } else if (res.data && res.data.products) {
-          setProducts(res.data.products);
-        } else {
-          setProducts([]);
-        }
+        if (Array.isArray(res.data)) setProducts(res.data);
+        else if (res.data && res.data.products) setProducts(res.data.products);
+        else setProducts([]);
       } catch (err) {
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
@@ -57,7 +49,6 @@ export default function DashboardView({
     }
   };
 
-  // Filter aur Search Logic
   const filteredProducts = products.filter(p => {
     const title = p.title || '';
     const asin = p.asin || '';
@@ -80,10 +71,7 @@ export default function DashboardView({
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-bold text-gray-900 mb-6">Current Settings</h3>
         
-        {/* ✅ Auto-Sync Toggle Add kiya gaya hai */}
-        <AutoSyncToggle API_URL={API_URL} selectedStoreId={selectedStoreId} />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
           <PricingSummary 
             markup={markup} 
             markupType={markupType} 
@@ -102,7 +90,6 @@ export default function DashboardView({
       {/* 2. All Products Section */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         
-        {/* Table Header */}
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">All Products</h2>
@@ -120,7 +107,7 @@ export default function DashboardView({
           )}
         </div>
 
-        {/* Filters & Search Bar */}
+        {/* Filters & Search */}
         <div className="p-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4 bg-gray-50/50">
           <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
             {['All', 'Active', 'Out of Stock', 'Draft'].map(filter => (
@@ -150,14 +137,12 @@ export default function DashboardView({
           </div>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="p-4 bg-red-50 text-red-600 text-sm border-b border-red-100">
             {error}
           </div>
         )}
 
-        {/* Table List */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -190,9 +175,6 @@ export default function DashboardView({
                     <div className="flex flex-col items-center justify-center text-gray-500 w-full">
                       <Package size={40} className="text-gray-300 mb-3" />
                       <p className="text-base font-medium">No products found.</p>
-                      {searchQuery || activeFilter !== 'All' ? (
-                        <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters.</p>
-                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -235,12 +217,8 @@ export default function DashboardView({
                           {asin}
                         </span>
                       </td>
-                      <td className="p-4 text-sm text-gray-600">
-                        ${amazonPrice}
-                      </td>
-                      <td className="p-4 text-sm font-semibold text-gray-900">
-                        ${shopifyPrice}
-                      </td>
+                      <td className="p-4 text-sm text-gray-600">${amazonPrice}</td>
+                      <td className="p-4 text-sm font-semibold text-gray-900">${shopifyPrice}</td>
                       <td className="p-4 text-sm">
                         <span className={stock === 0 ? 'text-red-500 font-medium' : 'text-gray-700'}>
                           {stock} in stock
