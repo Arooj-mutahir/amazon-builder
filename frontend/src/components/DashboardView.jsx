@@ -2,8 +2,12 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Box, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
+import PricingSummary from './PricingSummary';
+import CollectionSelector from './CollectionSelector';
 
 export default function DashboardView({ 
+  collections, selectedCollections, setSelectedCollections,
+  markup, markupType, extraPercent, taxRate,
   API_URL,
   selectedStoreId
 }) {
@@ -34,6 +38,14 @@ export default function DashboardView({
     };
     fetchStats();
   }, [API_URL, selectedStoreId]);
+
+  const handleCollectionToggle = (id) => {
+    if (selectedCollections.includes(id)) {
+      setSelectedCollections(selectedCollections.filter(cId => cId !== id));
+    } else {
+      setSelectedCollections([...selectedCollections, id]);
+    }
+  };
 
   const stats = [
     { 
@@ -73,6 +85,11 @@ export default function DashboardView({
   return (
     <div className="space-y-6">
       
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-sm text-gray-500 mt-1">Overview of your Amazon catalog imports, pricing rules, and real-time sync health.</p>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat, i) => (
@@ -90,42 +107,64 @@ export default function DashboardView({
         ))}
       </div>
 
-      {/* Recent Products (Full Width) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h3 className="text-lg font-bold text-gray-900">Recent Products</h3>
-            <p className="text-xs text-gray-500">Latest imported products from your connected store</p>
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Active Pricing & Collections (URL aur Button hata diya) */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Current Settings</h3>
+          
+          {/* ✅ Sirf Pricing aur Collections, URL & Button nahi */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <PricingSummary 
+              markup={markup} 
+              markupType={markupType} 
+              extraPercent={extraPercent} 
+              taxRate={taxRate} 
+            />
+            
+            <CollectionSelector 
+              collections={collections}
+              selectedCollections={selectedCollections}
+              onToggle={handleCollectionToggle}
+              loading={false}
+            />
           </div>
         </div>
 
-        <div className="space-y-4">
-          {fetchingStats ? (
-            <p className="text-sm text-gray-400">Loading products...</p>
-          ) : statsData.recent_products.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">No recent products found. Click "Import Products" to add new items.</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {statsData.recent_products.map((p) => (
-                <div key={p.id} className="flex flex-col p-4 border border-gray-100 rounded-xl hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
-                        <Box className="text-gray-300" size={24} />
-                    </div>
+        {/* Recent Activity */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Recent Products</h3>
+              <p className="text-xs text-gray-500">Latest imported products</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {fetchingStats ? (
+              <p className="text-sm text-gray-400">Loading...</p>
+            ) : statsData.recent_products.length === 0 ? (
+              <p className="text-sm text-gray-400">No recent products.</p>
+            ) : (
+              statsData.recent_products.map((p) => (
+                <div key={p.id} className="flex items-start justify-between py-3 border-b border-gray-50 last:border-0">
+                  <div className="overflow-hidden">
+                    <p className="font-medium text-gray-900 text-sm truncate">{p.title}</p>
+                    <p className="text-xs text-gray-500 mt-1">ASIN: {p.asin}</p>
+                  </div>
+                  <div className="text-right shrink-0 ml-4">
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${p.is_available ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
                       {p.is_available ? 'Active' : 'Out of Stock'}
                     </span>
-                  </div>
-                  <p className="font-medium text-gray-900 text-sm line-clamp-2">{p.title}</p>
-                  <div className="mt-3 flex items-center justify-between">
-                     <p className="text-xs text-gray-500">ASIN: {p.asin}</p>
-                     <p className="text-sm font-bold text-gray-900">${p.price}</p>
+                    <p className="text-xs text-gray-400 mt-2">${p.price}</p>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
+
       </div>
 
     </div>
