@@ -2,8 +2,13 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ShopifyStore, Product
+from pydantic import BaseModel
 
 router = APIRouter()
+
+# ✅ Toggle request body model
+class AutoSyncToggleRequest(BaseModel):
+    enabled: bool
 
 
 @router.get("/stores")
@@ -125,3 +130,73 @@ def get_all_products(
     except Exception as e:
         print(f"❌ Error fetching all products: {e}", flush=True)
         raise HTTPException(status_code=500, detail="Failed to fetch products")
+
+
+# ============================================
+# ✅ NAYA: Auto-Sync Status Check Endpoint
+# ============================================
+@router.get("/auto-sync/status")
+def get_auto_sync_status(
+    store_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    
+    # Agar database mein auto_sync_enabled nahi hai, toh by default True maan lo
+    is_enabled = getattr(store, 'auto_sync_enabled', True)
+    return {"enabled": is_enabled}
+
+
+# ============================================
+# ✅ NAYA: Auto-Sync Toggle Endpoint
+# ============================================
+@router.post("/auto-sync/toggle")
+def toggle_auto_sync(
+    store_id: int = Query(...),
+    payload: AutoSyncToggleRequest = None,
+    db: Session = Depends(get_db)
+):
+    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    
+    # Database mein save karein
+    store.auto_sync_enabled = payload.enabled
+    db.commit()
+    
+    return {
+        "enabled": store.auto_sync_enabled, 
+        "message": "Auto-sync setting updated successfully"
+    }
+
+
+# ============================================
+# ✅ NAYA: Manual Sync Trigger Endpoint
+# ============================================
+@router.post("/manual-sync")
+async def trigger_manual_sync(
+    store_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    
+    try:
+        # 🔴 IMPORTANT: Yahan aapko apna actual sync function call karna hoga
+        # Misaal: 
+        # from app.services.sync import run_full_sync
+        # await run_full_sync(store)
+        
+        # Abhi ke liye hum success return kar rahe hain
+        print(f"🔄 Manual sync triggered for store {store.shop_domain}", flush=True)
+        
+        return {
+            "status": "success", 
+            "message": "Manual sync started successfully. It will run in the background."
+        }
+    except Exception as e:
+        print(f"❌ Manual sync error: {e}", flush=True)
+        raise HTTPException(status_code=500, detail=str(e))

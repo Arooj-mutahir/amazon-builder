@@ -16,14 +16,16 @@ class ShopifyStore(Base):
     
     # Settings
     default_markup = Column(Float, default=0.0)             
-    default_markup_type = Column(String, default="fixed")    # ✅ Default fallback
+    default_markup_type = Column(String, default="fixed")    
     default_extra_percent = Column(Float, default=0.0)       
     default_tax_rate = Column(Float, default=0.0)            
-    default_stock_qty = Column(Integer, default=0)   
     
-    # ✅ NEW: Stock settings (optional lekin recommended)
-    default_stock_qty = Column(Integer, default=100)          # ✅
-    shopify_location_id = Column(String, nullable=True)       # ✅ cache
+    # ✅ FIX 1: Duplicate default_stock_qty hataya gaya
+    default_stock_qty = Column(Integer, default=100)          
+    shopify_location_id = Column(String, nullable=True)       
+
+    # ✅ FIX 2: Auto-Sync ke liye naya column add kiya gaya
+    auto_sync_enabled = Column(Boolean, default=True)         
 
 
 class Product(Base):
@@ -67,7 +69,7 @@ class Product(Base):
     # Shopify Integration
     shopify_product_id = Column(String, nullable=True)
     shopify_variant_ids = Column(JSON, nullable=True)
-    shopify_inventory_item_ids = Column(JSON, nullable=True)   # ✅ NEW — CRITICAL
+    shopify_inventory_item_ids = Column(JSON, nullable=True)   
     shopify_handle = Column(String, nullable=True)
     shopify_status = Column(String, nullable=True)
     shopify_store_id = Column(Integer, ForeignKey("shopify_stores.id"), nullable=True)

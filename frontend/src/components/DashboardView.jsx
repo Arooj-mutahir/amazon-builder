@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
+import AutoSyncToggle from './AutoSyncToggle'; // ✅ Naya Import
 
 export default function DashboardView({ 
   collections, selectedCollections, setSelectedCollections,
@@ -29,7 +30,6 @@ export default function DashboardView({
       setLoading(true);
       setError('');
       try {
-        // 🔴 Naya /products endpoint call ho raha hai
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
         
         if (Array.isArray(res.data)) {
@@ -79,7 +79,11 @@ export default function DashboardView({
       {/* 1. Current Settings Section */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
         <h3 className="text-lg font-bold text-gray-900 mb-6">Current Settings</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+        
+        {/* ✅ Auto-Sync Toggle Add kiya gaya hai */}
+        <AutoSyncToggle API_URL={API_URL} selectedStoreId={selectedStoreId} />
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch mt-4">
           <PricingSummary 
             markup={markup} 
             markupType={markupType} 
