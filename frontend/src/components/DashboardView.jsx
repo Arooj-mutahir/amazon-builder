@@ -17,9 +17,9 @@ export default function DashboardView({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // ✅ DATA FETCH LOGIC
+  // ✅ SAARE PRODUCTS FETCH KARNE KA LOGIC
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchAllProducts = async () => {
       if (!selectedStoreId) {
         setLoading(false);
         return;
@@ -27,31 +27,36 @@ export default function DashboardView({
       
       setLoading(true);
       try {
-        // 🔴 YAHAN APNA SAHI ENDPOINT DAALEIN. 
-        // Abhi ke liye maine dashboard-stats use kiya hai jo 'recent_products' bhejta hai.
-        const res = await axios.get(`${API_URL}/dashboard-stats?store_id=${selectedStoreId}`);
+        // 🔴 YAHAN APNA ENDPOINT DAALEIN JO SAARE PRODUCTS LAATA HO
+        // Misaal ke taur par: /products?store_id=123
+        const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
         
-        // Agar response mein recent_products hai
-        if (res.data && res.data.recent_products) {
-          setProducts(res.data.recent_products);
-        } 
-        // Agar direct array hai
-        else if (Array.isArray(res.data)) {
+        // Response format handle karna
+        if (Array.isArray(res.data)) {
           setProducts(res.data);
-        } 
-        // Agar object ke andar products key hai
-        else if (res.data && res.data.products) {
+        } else if (res.data && res.data.products) {
           setProducts(res.data.products);
+        } else if (res.data && res.data.data) {
+          setProducts(res.data.data);
         } else {
           setProducts([]);
         }
       } catch (err) {
-        console.error("Failed to fetch products for store:", selectedStoreId, err);
+        console.error("Failed to fetch all products:", err);
+        // Agar /products endpoint nahi hai (404 error), toh fallback ke taur par purana endpoint try karein
+        try {
+          const fallbackRes = await axios.get(`${API_URL}/dashboard-stats?store_id=${selectedStoreId}`);
+          if (fallbackRes.data && fallbackRes.data.recent_products) {
+            setProducts(fallbackRes.data.recent_products);
+          }
+        } catch (fallbackErr) {
+          console.error("Fallback fetch also failed:", fallbackErr);
+        }
       } finally {
         setLoading(false);
       }
     };
-    fetchProducts();
+    fetchAllProducts();
   }, [API_URL, selectedStoreId]);
 
   const handleCollectionToggle = (id) => {
@@ -132,6 +137,7 @@ export default function DashboardView({
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
+                {/* Total count show karne ke liye logic */}
                 {filter} {filter === 'All' && products.length > 0 ? products.length : ''}
               </button>
             ))}
@@ -172,12 +178,11 @@ export default function DashboardView({
                   <td colSpan="8" className="p-8 text-center text-gray-500">Loading products...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
-                // ✅ FIX: Text tootne ki problem yahan fix ki gayi hai
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500 w-full">
                       <Package size={40} className="text-gray-300 mb-3" />
-                      <p className="text-base font-medium">No products found.</p>
+                      <p className="text-base font-medium">No products found for this store.</p>
                       {searchQuery || activeFilter !== 'All' ? (
                         <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters.</p>
                       ) : null}
@@ -186,6 +191,7 @@ export default function DashboardView({
                 </tr>
               ) : (
                 filteredProducts.map((product) => {
+                  // Fallbacks handle kiye gaye hain
                   const title = product.title || product.name || 'Unknown Product';
                   const asin = product.asin || 'N/A';
                   const amazonPrice = product.amazon_price || product.price || '0.00';
