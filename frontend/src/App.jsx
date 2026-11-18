@@ -11,7 +11,6 @@ import ImportModal from './components/ImportModal';
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
-// ✅ Error Boundary
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -63,6 +62,11 @@ export default function App() {
   const [selectedCollections, setSelectedCollections] = useState([]);
 
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
+
+  // ✅ FIX: onReady ko useCallback se stable banaya
+  const handleReady = useCallback(() => {
+    setIsPageLoading(false);
+  }, []);
 
   // URL-based initial tab detection
   useEffect(() => {
@@ -194,7 +198,7 @@ export default function App() {
   const handleTabChange = useCallback((tab) => {
     if (tab === activeTab) return;
     setIsPageLoading(true);
-    setTabKey(k => k + 1); // Force remount — purana content destroy ho jayega
+    setTabKey(k => k + 1); 
     setActiveTab(tab);
     const pathMap = { dashboard: '/', 'manual-sync': '/manual-sync', settings: '/settings' };
     window.history.pushState({}, '', pathMap[tab] || '/');
@@ -202,7 +206,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
-
       <main className="flex-1 flex flex-col overflow-y-auto">
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex flex-col">
@@ -223,7 +226,6 @@ export default function App() {
         </header>
 
         <div className="p-8 relative flex-1 bg-[#F8F9FA]">
-          {/* ✅ FIX: Jab load ho raha ho toh sirf Loader dikhe, content hide rahe */}
           {isPageLoading ? (
             <div className="w-full h-full flex items-center justify-center">
               <Loader message="Loading page..." />
@@ -242,7 +244,7 @@ export default function App() {
                   markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
                   error={error} successMsg={successMsg}
                   onOpenImportModal={() => setIsModalOpen(true)}
-                  onReady={() => setIsPageLoading(false)}
+                  onReady={handleReady} // ✅ Stable function pass kiya
                 />
               )}
 
@@ -253,7 +255,7 @@ export default function App() {
                   selectedStoreId={selectedStoreId}
                   isAutoSyncEnabled={isAutoSyncEnabled}
                   onToggleAutoSync={handleToggleAutoSync}
-                  onReady={() => setIsPageLoading(false)}
+                  onReady={handleReady} // ✅ Stable function pass kiya
                 />
               )}
 
@@ -264,7 +266,7 @@ export default function App() {
                   storeId={selectedStoreId}
                   API_URL={API_URL}
                   shopDomain={selectedStore}
-                  onReady={() => setIsPageLoading(false)}
+                  onReady={handleReady} // ✅ Stable function pass kiya
                 />
               )}
             </ErrorBoundary>

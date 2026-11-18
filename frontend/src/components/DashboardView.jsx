@@ -11,7 +11,7 @@ export default function DashboardView({
   API_URL,
   selectedStoreId,
   onOpenImportModal,
-  onReady, 
+  onReady 
 }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true); 
@@ -20,18 +20,17 @@ export default function DashboardView({
   const [activeFilter, setActiveFilter] = useState('All');
 
   useEffect(() => {
-    // ✅ SAFETY TIMEOUT: Agar 3 second mein data nahi aaya, toh loader hata do
-    const timeoutId = setTimeout(() => {
-      setLoading(false);
-      onReady?.();
-    }, 3000);
+    let isMounted = true;
 
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
         setLoading(false);
-        onReady?.(); 
+        if (isMounted && onReady) onReady();
         return;
       }
+      
+      setLoading(true);
+      setError('');
       
       try {
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
@@ -42,15 +41,21 @@ export default function DashboardView({
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
-        clearTimeout(timeoutId); // Data aa gaya, timeout clear karein
-        setLoading(false);
-        onReady?.(); // ✅ Global loader hatayein
+        if (isMounted) {
+          setLoading(false);
+          if (onReady) onReady();
+        }
       }
     };
+
     fetchAllProducts();
 
-    return () => clearTimeout(timeoutId);
-  }, [API_URL, selectedStoreId, onReady]);
+    return () => {
+      isMounted = false;
+    };
+    // ✅ onReady ko dependency se hata diya taake infinite loop na bane
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_URL, selectedStoreId]); 
 
   const handleCollectionToggle = (id) => {
     if (selectedCollections.includes(id)) {
