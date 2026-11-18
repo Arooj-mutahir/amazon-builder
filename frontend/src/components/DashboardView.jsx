@@ -1,51 +1,82 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
-import PricingSummary from './PricingSummary';
-import CollectionSelector from './CollectionSelector';
+import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
 
 export default function DashboardView({ 
-  collections, selectedCollections, setSelectedCollections,
-  markup, markupType, extraPercent, taxRate,
   API_URL,
   selectedStoreId,
-  onOpenImportModal 
+  selectedStore,
+  onOpenImportModal,
+  onReady 
 }) {
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); 
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [actionLoading, setActionLoading] = useState(null); 
+
+  const fetchAllProducts = async () => {
+    if (!selectedStoreId) {
+      setLoading(false);
+      onReady?.();
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
+      if (Array.isArray(res.data)) setProducts(res.data);
+      else if (res.data && res.data.products) setProducts(res.data.products);
+      else setProducts([]);
+    } catch (err) {
+      console.error("Failed to fetch all products:", err);
+      setError("Products fetch karne mein error aaya. Backend server check karein.");
+    } finally {
+      setLoading(false);
+      onReady?.();
+    }
+  };
 
   useEffect(() => {
-    const fetchAllProducts = async () => {
-      if (!selectedStoreId) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError('');
-      try {
-        const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
-        if (Array.isArray(res.data)) setProducts(res.data);
-        else if (res.data && res.data.products) setProducts(res.data.products);
-        else setProducts([]);
-      } catch (err) {
-        console.error("Failed to fetch all products:", err);
-        setError("Products fetch karne mein error aaya. Backend server check karein.");
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchAllProducts();
   }, [API_URL, selectedStoreId]);
 
-  const handleCollectionToggle = (id) => {
-    if (selectedCollections.includes(id)) {
-      setSelectedCollections(selectedCollections.filter(cId => cId !== id));
+  const handleSyncProduct = async (id) => {
+    setActionLoading(id);
+    try {
+      await axios.post(`${API_URL}/products/${id}/sync`);
+      alert("✅ Sync started successfully!");
+    } catch (err) {
+      console.error("Sync failed:", err);
+      alert("❌ Failed to sync product.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteProduct = async (id) => {
+    if (!window.confirm("Kya aap sach mein yeh product delete karna chahte hain?")) return;
+    
+    setActionLoading(id);
+    try {
+      await axios.delete(`${API_URL}/products/${id}`);
+      setProducts(products.filter(p => p.id !== id));
+      alert("✅ Product deleted successfully!");
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("❌ Failed to delete product.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleViewOnShopify = (product) => {
+    if (product.shopify_product_id && selectedStore) {
+      window.open(`https://${selectedStore}/admin/products/${product.shopify_product_id}`, '_blank');
     } else {
-      setSelectedCollections([...selectedCollections, id]);
+      alert("Product is not synced to Shopify yet, or store domain is missing.");
     }
   };
 
@@ -67,35 +98,12 @@ export default function DashboardView({
   return (
     <div className="space-y-6">
       
-      {/* 1. Current Settings Section */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <h3 className="text-lg font-bold text-gray-900 mb-6">Current Settings</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-          <PricingSummary 
-            markup={markup} 
-            markupType={markupType} 
-            extraPercent={extraPercent} 
-            taxRate={taxRate} 
-          />
-          <CollectionSelector 
-            collections={collections}
-            selectedCollections={selectedCollections}
-            onToggle={handleCollectionToggle}
-            loading={false}
-          />
-        </div>
-      </div>
-
-      {/* 2. All Products Section */}
+      {/* ✅ SIRF PRODUCTS TABLE SECTION (Current Settings hata diya gaya hai) */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">All Products</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Showing {products.length} products from the database.
-            </p>
+            <p className="text-sm text-gray-500 mt-1">Showing {products.length} products from the database.</p>
           </div>
           {onOpenImportModal && (
             <button 
@@ -115,41 +123,30 @@ export default function DashboardView({
                 key={filter}
                 onClick={() => setActiveFilter(filter)}
                 className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeFilter === filter 
-                    ? 'bg-gray-200/80 text-gray-900' 
-                    : 'text-gray-600 hover:bg-gray-100'
+                  activeFilter === filter ? 'bg-gray-200/80 text-gray-900' : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
                 {filter}
               </button>
             ))}
           </div>
-
           <div className="relative w-full md:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
-              type="text" 
-              placeholder="Search by title or ASIN..." 
-              value={searchQuery}
+              type="text" placeholder="Search by title or ASIN..." value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
           </div>
         </div>
 
-        {error && (
-          <div className="p-4 bg-red-50 text-red-600 text-sm border-b border-red-100">
-            {error}
-          </div>
-        )}
+        {error && <div className="p-4 bg-red-50 text-red-600 text-sm border-b border-red-100">{error}</div>}
 
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                <th className="p-4 w-12 text-center">
-                  <input type="checkbox" className="rounded border-gray-300" />
-                </th>
+                <th className="p-4 w-12 text-center"><input type="checkbox" className="rounded border-gray-300" /></th>
                 <th className="p-4 font-semibold">Product</th>
                 <th className="p-4 font-semibold">ASIN</th>
                 <th className="p-4 font-semibold">Amazon Price</th>
@@ -161,14 +158,7 @@ export default function DashboardView({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr>
-                  <td colSpan="8" className="p-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
-                      <Loader2 className="animate-spin text-green-600 mb-3" size={32} />
-                      <p className="text-base font-medium">Fetching products...</p>
-                    </div>
-                  </td>
-                </tr>
+                <tr><td colSpan="8" className="p-12 text-center text-gray-500">Loading products...</td></tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
@@ -187,12 +177,11 @@ export default function DashboardView({
                   const stock = product.stock !== undefined ? product.stock : (product.is_available ? 10 : 0);
                   const isActive = product.is_available !== undefined ? product.is_available : (product.status === 'Active');
                   const statusText = isActive ? 'Active' : (stock === 0 ? 'Out of Stock' : 'Draft');
+                  const isActionLoading = actionLoading === product.id;
 
                   return (
                     <tr key={product.id || product.asin} className="hover:bg-gray-50/50 transition-colors group">
-                      <td className="p-4 text-center">
-                        <input type="checkbox" className="rounded border-gray-300" />
-                      </td>
+                      <td className="p-4 text-center"><input type="checkbox" className="rounded border-gray-300" /></td>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
@@ -203,46 +192,51 @@ export default function DashboardView({
                             )}
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate" title={title}>
-                              {title}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-0.5">
-                              Auto-Sync {product.auto_sync !== false ? 'ON' : 'OFF'}
-                            </p>
+                            <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate" title={title}>{title}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Auto-Sync {product.auto_sync !== false ? 'ON' : 'OFF'}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="p-4">
-                        <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200 font-mono">
-                          {asin}
-                        </span>
-                      </td>
+                      <td className="p-4"><span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200 font-mono">{asin}</span></td>
                       <td className="p-4 text-sm text-gray-600">${amazonPrice}</td>
                       <td className="p-4 text-sm font-semibold text-gray-900">${shopifyPrice}</td>
                       <td className="p-4 text-sm">
-                        <span className={stock === 0 ? 'text-red-500 font-medium' : 'text-gray-700'}>
-                          {stock} in stock
-                        </span>
+                        <span className={stock === 0 ? 'text-red-500 font-medium' : 'text-gray-700'}>{stock} in stock</span>
                       </td>
                       <td className="p-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
                           ${statusText === 'Active' ? 'bg-green-100 text-green-700' : 
                             statusText === 'Out of Stock' ? 'bg-red-100 text-red-700' : 
-                            'bg-blue-100 text-blue-700'}`}
-                        >
+                            'bg-blue-100 text-blue-700'}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${statusText === 'Active' ? 'bg-green-500' : statusText === 'Out of Stock' ? 'bg-red-500' : 'bg-blue-500'}`}></span>
                           {statusText}
                         </span>
                       </td>
                       <td className="p-4">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="Sync Product">
-                            <RefreshCw size={16} />
+                          <button 
+                            onClick={() => handleSyncProduct(product.id)}
+                            disabled={isActionLoading}
+                            className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all disabled:opacity-50" 
+                            title="Sync Product"
+                          >
+                            <RefreshCw size={16} className={isActionLoading ? "animate-spin" : ""} />
                           </button>
-                          <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="View on Shopify">
+                          
+                          <button 
+                            onClick={() => handleViewOnShopify(product)}
+                            className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" 
+                            title="View on Shopify"
+                          >
                             <ExternalLink size={16} />
                           </button>
-                          <button className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 transition-all" title="Delete">
+                          
+                          <button 
+                            onClick={() => handleDeleteProduct(product.id)}
+                            disabled={isActionLoading}
+                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 transition-all disabled:opacity-50" 
+                            title="Delete"
+                          >
                             <Trash2 size={16} />
                           </button>
                         </div>
