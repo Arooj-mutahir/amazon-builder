@@ -6,23 +6,31 @@ import { RefreshCw, Loader2, Power } from 'lucide-react';
 export default function ManualSync({ 
   API_URL, 
   selectedStoreId, 
-  isAutoSyncEnabled,   // null = still loading, true/false = fetched
+  isAutoSyncEnabled, 
   onToggleAutoSync,
-  onReady,             // ✅ App.jsx ka global loader hatane ka callback
+  onReady 
 }) {
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
   const [updatingToggle, setUpdatingToggle] = useState(false);
 
-  // ✅ Jab bhi isAutoSyncEnabled null se kuch bhi ban jaye → global loader hatao
+  // ✅ SAFETY TIMEOUT: Agar data na aaye toh 2 second baad loader hata do
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      onReady?.();
+    }, 2000);
+    return () => clearTimeout(timeoutId);
+  }, [onReady]);
+
+  // ✅ Jab data aa jaye toh turant loader hatao
   useEffect(() => {
     if (isAutoSyncEnabled !== null) {
       onReady?.();
     }
-  }, [isAutoSyncEnabled]);
+  }, [isAutoSyncEnabled, onReady]);
 
   const handleToggle = async () => {
-    if (updatingToggle || isAutoSyncEnabled === null) return;
+    if (updatingToggle) return;
     setUpdatingToggle(true);
     await onToggleAutoSync();
     setUpdatingToggle(false);
@@ -63,39 +71,27 @@ export default function ManualSync({
                   Automatically monitor Amazon price changes and stock availability in the background.
                 </p>
               </div>
-
-              {/* ✅ Toggle: null hone par pulsing skeleton, nahi toh actual toggle */}
-              {isAutoSyncEnabled === null ? (
-                <div className="h-6 w-11 rounded-full bg-gray-200 animate-pulse shrink-0" />
-              ) : (
-                <button 
-                  onClick={handleToggle}
-                  disabled={updatingToggle}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-                    isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
-                  } ${updatingToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    isAutoSyncEnabled ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              )}
+              <button 
+                onClick={handleToggle}
+                disabled={updatingToggle}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  isAutoSyncEnabled === true ? 'bg-[#008060]' : 'bg-gray-300'
+                } ${updatingToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isAutoSyncEnabled === true ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
             </div>
           </div>
           
           <div className="border-t border-gray-100 pt-4 mt-4 flex items-center justify-between">
             <span className="text-sm font-medium text-gray-500">Status</span>
             <div className="flex items-center gap-1.5">
-              {isAutoSyncEnabled === null ? (
-                <span className="text-sm text-gray-400 animate-pulse">Checking...</span>
-              ) : (
-                <>
-                  <span className={`w-2 h-2 rounded-full ${isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-400'}`}></span>
-                  <span className={`text-sm font-bold ${isAutoSyncEnabled ? 'text-[#008060]' : 'text-gray-500'}`}>
-                    {isAutoSyncEnabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </>
-              )}
+              <span className={`w-2 h-2 rounded-full ${isAutoSyncEnabled === true ? 'bg-[#008060]' : 'bg-gray-400'}`}></span>
+              <span className={`text-sm font-bold ${isAutoSyncEnabled === true ? 'text-[#008060]' : 'text-gray-500'}`}>
+                {isAutoSyncEnabled === true ? 'Enabled' : 'Disabled'}
+              </span>
             </div>
           </div>
         </div>
@@ -106,7 +102,7 @@ export default function ManualSync({
             <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4 border border-gray-100">
               <RefreshCw size={28} className={syncing ? "animate-spin text-blue-600" : "text-blue-600"} />
             </div>
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Manual Price &amp; Inventory Sync</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Manual Price & Inventory Sync</h2>
             <p className="text-sm text-gray-500 mb-4 leading-relaxed">
               Instantly fetch the latest prices and stock from Amazon and update your Shopify store. Bypasses the 2 AM cron job.
             </p>

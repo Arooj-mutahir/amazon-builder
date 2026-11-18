@@ -11,7 +11,7 @@ export default function DashboardView({
   API_URL,
   selectedStoreId,
   onOpenImportModal,
-  onReady,       // ✅ App.jsx se global loader hatane ka callback
+  onReady, 
 }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true); 
@@ -20,15 +20,18 @@ export default function DashboardView({
   const [activeFilter, setActiveFilter] = useState('All');
 
   useEffect(() => {
+    // ✅ SAFETY TIMEOUT: Agar 3 second mein data nahi aaya, toh loader hata do
+    const timeoutId = setTimeout(() => {
+      setLoading(false);
+      onReady?.();
+    }, 3000);
+
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
         setLoading(false);
-        onReady?.(); // ✅ Store nahi hai toh bhi global loader hatao
+        onReady?.(); 
         return;
       }
-      
-      setLoading(true);
-      setError('');
       
       try {
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
@@ -39,12 +42,15 @@ export default function DashboardView({
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
+        clearTimeout(timeoutId); // Data aa gaya, timeout clear karein
         setLoading(false);
-        onReady?.(); // ✅ Fetch complete — global loader hatao
+        onReady?.(); // ✅ Global loader hatayein
       }
     };
     fetchAllProducts();
-  }, [API_URL, selectedStoreId]);
+
+    return () => clearTimeout(timeoutId);
+  }, [API_URL, selectedStoreId, onReady]);
 
   const handleCollectionToggle = (id) => {
     if (selectedCollections.includes(id)) {
@@ -68,9 +74,6 @@ export default function DashboardView({
     if (activeFilter === 'Draft') return matchesSearch && statusText === 'Draft';
     return matchesSearch;
   });
-
-  // ✅ Global loader handle kar raha hai — local loading check hata diya
-  // (onReady callback se App.jsx ka global loader control hota hai)
 
   return (
     <div className="space-y-6">
@@ -168,7 +171,13 @@ export default function DashboardView({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredProducts.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="8" className="p-12 text-center text-gray-500">
+                    Loading products...
+                  </td>
+                </tr>
+              ) : filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500 w-full">
