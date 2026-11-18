@@ -1,7 +1,7 @@
 // src/App.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { Plus, Loader2 } from 'lucide-react'; 
+import { Plus, Loader2, AlertTriangle } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -10,9 +10,35 @@ import ImportModal from './components/ImportModal';
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
+// ✅ Error Boundary: Agar koi component crash ho toh black screen na aaye
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 flex flex-col items-center justify-center text-center h-full">
+          <AlertTriangle size={48} className="text-red-500 mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Kuch Gadbad Ho Gayi!</h2>
+          <p className="text-gray-500 mb-4">Page load karte waqt error aa gaya. Kripya page refresh karein.</p>
+          <button onClick={() => window.location.reload()} className="bg-gray-900 text-white px-4 py-2 rounded-lg">
+            Refresh Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [tabLoading, setTabLoading] = useState(false); // ✅ NAYA: Page transition loader
+  const [isTransitioning, setIsTransitioning] = useState(false); // ✅ Loader State
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -59,9 +85,7 @@ export default function App() {
         if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
-
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
-
           setSelectedStore(foundStore.shop_domain);
           setSelectedStoreId(foundStore.id);
         }
@@ -72,7 +96,7 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // Keep selectedStoreId in sync whenever selectedStore changes
+  // Keep selectedStoreId in sync
   useEffect(() => {
     if (!selectedStore || stores.length === 0) return;
     const store = stores.find(s => s.shop_domain === selectedStore);
@@ -81,14 +105,12 @@ export default function App() {
     }
   }, [selectedStore, stores, selectedStoreId]);
 
-  // Fetch collections when store changes; reset selected collections
+  // Fetch collections
   useEffect(() => {
     let cancelled = false;
-
     const fetchCollections = async () => {
       setSelectedCollections([]);
       setCollections([]);
-
       if (!selectedStore) return;
 
       try {
@@ -100,7 +122,6 @@ export default function App() {
         console.error("Failed to fetch collections", err);
       }
     };
-
     fetchCollections();
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
@@ -132,10 +153,8 @@ export default function App() {
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
-      
       setUrl(''); 
       setModalKey(prev => prev + 1); 
-
       setIsModalOpen(false);
     } catch (err) {
       const msg = err.response?.data?.detail || 'Failed to connect to backend.';
@@ -153,20 +172,19 @@ export default function App() {
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
     
-    // ✅ Fix: Back jaate waqt loader lagayein
-    setTabLoading(true);
+    setIsTransitioning(true);
     setTimeout(() => {
       setActiveTab('dashboard');
       window.history.pushState({}, '', '/');
-      setTabLoading(false);
-    }, 100);
+      setIsTransitioning(false);
+    }, 200);
   }, []);
 
-  // ✅ Fix: Tab change karne ke liye naya handler (Loader ke sath)
+  // ✅ Smooth Tab Change Handler
   const handleTabChange = useCallback((tab) => {
-    if (tab === activeTab) return; // Agar wahi tab hai toh kuch na karein
-
-    setTabLoading(true);
+    if (tab === activeTab) return; // Agar same tab hai toh kuch na karein
+    
+    setIsTransitioning(true);
     setTimeout(() => {
       setActiveTab(tab);
       const pathMap = {
@@ -175,14 +193,13 @@ export default function App() {
         settings: '/settings'
       };
       window.history.pushState({}, '', pathMap[tab] || '/');
-      setTabLoading(false);
-    }, 150); // 150ms ka smooth transition
+      setIsTransitioning(false);
+    }, 200); // 200ms loader
   }, [activeTab]);
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
         {/* Top Header */}
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
@@ -213,16 +230,16 @@ export default function App() {
         {/* Page Content */}
         <div className="p-8 relative flex-1">
           
-          {/* ✅ FIX: Agar Tab Loading hai toh spinner dikhayein */}
-          {tabLoading ? (
+          {/* ✅ Transition Loader */}
+          {isTransitioning ? (
             <div className="absolute inset-0 flex items-center justify-center bg-[#F8F9FA] z-10">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-[#008060]" />
-                <p className="text-sm text-gray-500 font-medium">Loading page...</p>
+                <p className="text-sm text-gray-500 font-medium">Loading...</p>
               </div>
             </div>
           ) : (
-            <>
+            <ErrorBoundary>
               {activeTab === 'dashboard' && (
                 <DashboardView
                   API_URL={API_URL}
@@ -249,7 +266,7 @@ export default function App() {
                   shopDomain={selectedStore} 
                 />
               )}
-            </>
+            </ErrorBoundary>
           )}
         </div>
       </main>
