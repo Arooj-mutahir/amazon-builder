@@ -1,7 +1,7 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
 
@@ -14,6 +14,7 @@ export default function DashboardView({
 }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
@@ -26,32 +27,21 @@ export default function DashboardView({
       }
       
       setLoading(true);
+      setError('');
       try {
-        // 🔴 YAHAN APNA ENDPOINT DAALEIN JO SAARE PRODUCTS LAATA HO
-        // Misaal ke taur par: /products?store_id=123
+        // 🔴 Naya /products endpoint call ho raha hai
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
         
-        // Response format handle karna
         if (Array.isArray(res.data)) {
           setProducts(res.data);
         } else if (res.data && res.data.products) {
           setProducts(res.data.products);
-        } else if (res.data && res.data.data) {
-          setProducts(res.data.data);
         } else {
           setProducts([]);
         }
       } catch (err) {
         console.error("Failed to fetch all products:", err);
-        // Agar /products endpoint nahi hai (404 error), toh fallback ke taur par purana endpoint try karein
-        try {
-          const fallbackRes = await axios.get(`${API_URL}/dashboard-stats?store_id=${selectedStoreId}`);
-          if (fallbackRes.data && fallbackRes.data.recent_products) {
-            setProducts(fallbackRes.data.recent_products);
-          }
-        } catch (fallbackErr) {
-          console.error("Fallback fetch also failed:", fallbackErr);
-        }
+        setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
         setLoading(false);
       }
@@ -69,17 +59,17 @@ export default function DashboardView({
 
   // Filter aur Search Logic
   const filteredProducts = products.filter(p => {
-    const title = p.title || p.name || '';
+    const title = p.title || '';
     const asin = p.asin || '';
-    const status = p.is_available ? 'Active' : (p.status || 'Draft');
-
+    const statusText = p.is_available ? 'Active' : (p.status || 'Out of Stock');
+    
     const matchesSearch = title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           asin.toLowerCase().includes(searchQuery.toLowerCase());
     
     if (activeFilter === 'All') return matchesSearch;
-    if (activeFilter === 'Active') return matchesSearch && status === 'Active';
-    if (activeFilter === 'Out of Stock') return matchesSearch && (status === 'Out of Stock' || p.is_available === false);
-    if (activeFilter === 'Draft') return matchesSearch && status === 'Draft';
+    if (activeFilter === 'Active') return matchesSearch && statusText === 'Active';
+    if (activeFilter === 'Out of Stock') return matchesSearch && statusText === 'Out of Stock';
+    if (activeFilter === 'Draft') return matchesSearch && statusText === 'Draft';
     return matchesSearch;
   });
 
@@ -112,7 +102,9 @@ export default function DashboardView({
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-gray-900">All Products</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage imported Amazon listings, monitor margins, and trigger individual syncs.</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Showing {products.length} products from the database.
+            </p>
           </div>
           {onOpenImportModal && (
             <button 
@@ -137,8 +129,7 @@ export default function DashboardView({
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
-                {/* Total count show karne ke liye logic */}
-                {filter} {filter === 'All' && products.length > 0 ? products.length : ''}
+                {filter}
               </button>
             ))}
           </div>
@@ -154,6 +145,13 @@ export default function DashboardView({
             />
           </div>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="p-4 bg-red-50 text-red-600 text-sm border-b border-red-100">
+            {error}
+          </div>
+        )}
 
         {/* Table List */}
         <div className="overflow-x-auto">
@@ -175,14 +173,19 @@ export default function DashboardView({
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center text-gray-500">Loading products...</td>
+                  <td colSpan="8" className="p-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
+                      <Loader2 className="animate-spin text-green-600 mb-3" size={32} />
+                      <p className="text-base font-medium">Fetching products...</p>
+                    </div>
+                  </td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500 w-full">
                       <Package size={40} className="text-gray-300 mb-3" />
-                      <p className="text-base font-medium">No products found for this store.</p>
+                      <p className="text-base font-medium">No products found.</p>
                       {searchQuery || activeFilter !== 'All' ? (
                         <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters.</p>
                       ) : null}
@@ -191,11 +194,10 @@ export default function DashboardView({
                 </tr>
               ) : (
                 filteredProducts.map((product) => {
-                  // Fallbacks handle kiye gaye hain
-                  const title = product.title || product.name || 'Unknown Product';
+                  const title = product.title || 'Unknown Product';
                   const asin = product.asin || 'N/A';
-                  const amazonPrice = product.amazon_price || product.price || '0.00';
-                  const shopifyPrice = product.shopify_price || product.price || '0.00';
+                  const amazonPrice = product.amazon_price || '0.00';
+                  const shopifyPrice = product.shopify_price || '0.00';
                   const stock = product.stock !== undefined ? product.stock : (product.is_available ? 10 : 0);
                   const isActive = product.is_available !== undefined ? product.is_available : (product.status === 'Active');
                   const statusText = isActive ? 'Active' : (stock === 0 ? 'Out of Stock' : 'Draft');
