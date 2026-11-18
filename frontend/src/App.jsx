@@ -249,12 +249,22 @@ export default function App() {
                   key={tabKey}
                   API_URL={API_URL}
                   selectedStoreId={selectedStoreId}
-                  url={url} setUrl={setUrl}
-                  loading={loading} onSubmit={handleModalImport}
-                  stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-                  collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-                  markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-                  error={error} successMsg={successMsg}
+                  selectedStore={selectedStore} // ✅ Yeh pass karna zaroori tha
+                  url={url} 
+                  setUrl={setUrl}
+                  loading={loading} 
+                  onSubmit={handleModalImport}
+                  stores={stores} 
+                  setSelectedStore={setSelectedStore}
+                  collections={collections} 
+                  selectedCollections={selectedCollections} 
+                  setSelectedCollections={setSelectedCollections}
+                  markup={markup} 
+                  markupType={markupType} 
+                  extraPercent={extraPercent} 
+                  taxRate={taxRate}
+                  error={error} 
+                  successMsg={successMsg}
                   onOpenImportModal={() => setIsModalOpen(true)}
                   onReady={handleReady}
                 />

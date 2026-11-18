@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
-import CollectionSelector from './CollectionSelector'; // ✅ Wapas import kiya
+import CollectionSelector from './CollectionSelector';
 
 export default function DashboardView({ 
   collections = [], 
@@ -14,6 +14,7 @@ export default function DashboardView({
   taxRate = '0',
   API_URL,
   selectedStoreId,
+  selectedStore, // ✅ FIX: Yeh prop missing tha (View on Shopify ke liye zaroori hai)
   onOpenImportModal,
   onReady 
 }) {
@@ -99,13 +100,12 @@ export default function DashboardView({
   };
 
   const handleViewOnShopify = (product) => {
-    if (product.shopify_product_id) {
+    if (product.shopify_product_id && selectedStore) {
       window.open(`https://${selectedStore}/admin/products/${product.shopify_product_id}`, '_blank');
     } else {
-      alert("Product is not synced to Shopify yet.");
+      alert("Product is not synced to Shopify yet, or store domain is missing.");
     }
   };
-
 
   const filteredProducts = products.filter(p => {
     const title = p.title || '';
@@ -154,7 +154,6 @@ export default function DashboardView({
               <p className="text-sm font-bold text-gray-800">Auto-Sync</p>
               <p className="text-xs text-gray-500">Price & stock tracking</p>
             </div>
-            {/* Note: Yahan toggle static hai, agar aap ise kaam karwana chahte hain toh onToggleAutoSync pass karein */}
             <div className="w-10 h-5 rounded-full bg-gray-300 relative">
               <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full"></div>
             </div>
@@ -170,7 +169,7 @@ export default function DashboardView({
         {/* Divider */}
         <div className="border-t border-gray-100 my-6"></div>
 
-        {/* ✅ Buttons (Import ki jagah Manage Products) */}
+        {/* ✅ Buttons */}
         <div className="flex justify-end gap-3">
           <button 
             onClick={onOpenImportModal} 
