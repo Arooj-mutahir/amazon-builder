@@ -1,9 +1,10 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
+import Loader from './Loader'; // ✅ Loader Import kiya
 
 export default function DashboardView({ 
   collections, selectedCollections, setSelectedCollections,
@@ -63,6 +64,11 @@ export default function DashboardView({
     if (activeFilter === 'Draft') return matchesSearch && statusText === 'Draft';
     return matchesSearch;
   });
+
+  // ✅ FIX: Agar data load ho raha hai toh pura page loader dikhayein
+  if (loading) {
+    return <Loader message="Loading dashboard products..." />;
+  }
 
   return (
     <div className="space-y-6">
@@ -160,16 +166,7 @@ export default function DashboardView({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                <tr>
-                  <td colSpan="8" className="p-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
-                      <Loader2 className="animate-spin text-green-600 mb-3" size={32} />
-                      <p className="text-base font-medium">Fetching products...</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredProducts.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500 w-full">

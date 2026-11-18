@@ -1,7 +1,8 @@
 // src/components/ManualSync.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { RefreshCw, Loader2, Power, Activity } from 'lucide-react';
+import { RefreshCw, Loader2, Power } from 'lucide-react';
+import Loader from './Loader'; // ✅ Loader Import kiya
 
 export default function ManualSync({ API_URL, selectedStoreId }) {
   // Manual Sync States
@@ -73,6 +74,11 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
     }
   };
 
+  // ✅ FIX: Agar data load ho raha hai toh pura page loader dikhayein
+  if (loadingStatus) {
+    return <Loader message="Loading sync settings..." />;
+  }
+
   return (
     <div className="flex flex-col p-4 max-w-5xl mx-auto space-y-6">
       
@@ -81,10 +87,10 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
         <p className="text-sm text-gray-500 mt-1">Manage automated background syncing and trigger manual updates.</p>
       </div>
 
-      {/* ✅ 2 Columns Layout (No Dark Colors) */}
+      {/* ✅ 2 Columns Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
         
-        {/* 1. Auto-Sync Toggle Card (White) */}
+        {/* 1. Auto-Sync Toggle Card */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col justify-between h-full">
           <div>
             <div className="flex justify-between items-start mb-4">
@@ -96,21 +102,17 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
                   Automatically monitor Amazon price changes and stock availability in the background.
                 </p>
               </div>
-              {loadingStatus ? (
-                 <Loader2 className="animate-spin text-gray-400 shrink-0" size={24} />
-              ) : (
-                <button 
-                  onClick={handleToggle}
-                  disabled={updatingToggle}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-                    isEnabled ? 'bg-[#008060]' : 'bg-gray-300'
-                  } ${updatingToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    isEnabled ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
-              )}
+              <button 
+                onClick={handleToggle}
+                disabled={updatingToggle}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  isEnabled ? 'bg-[#008060]' : 'bg-gray-300'
+                } ${updatingToggle ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
             </div>
           </div>
           
@@ -125,7 +127,7 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
           </div>
         </div>
 
-        {/* 2. Manual Sync Card (White Theme) */}
+        {/* 2. Manual Sync Card */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col justify-between h-full text-center">
           <div>
             <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4 border border-gray-100">

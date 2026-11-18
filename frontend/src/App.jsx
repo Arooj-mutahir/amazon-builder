@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { Plus, Loader2, AlertTriangle } from 'lucide-react'; 
+import { Plus, AlertTriangle } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -10,7 +10,7 @@ import ImportModal from './components/ImportModal';
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
-// ✅ Error Boundary: Agar koi component crash ho toh black screen na aaye
+// ✅ Error Boundary
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -38,7 +38,6 @@ class ErrorBoundary extends Component {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isTransitioning, setIsTransitioning] = useState(false); // ✅ Loader State
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -172,29 +171,22 @@ export default function App() {
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
     
-    setIsTransitioning(true);
-    setTimeout(() => {
-      setActiveTab('dashboard');
-      window.history.pushState({}, '', '/');
-      setIsTransitioning(false);
-    }, 200);
+    // ✅ Direct tab change, no delay
+    setActiveTab('dashboard');
+    window.history.pushState({}, '', '/');
   }, []);
 
-  // ✅ Smooth Tab Change Handler
+  // ✅ Smooth Tab Change (Direct without artificial delay)
   const handleTabChange = useCallback((tab) => {
-    if (tab === activeTab) return; // Agar same tab hai toh kuch na karein
+    if (tab === activeTab) return;
     
-    setIsTransitioning(true);
-    setTimeout(() => {
-      setActiveTab(tab);
-      const pathMap = {
-        dashboard: '/',
-        'manual-sync': '/manual-sync',
-        settings: '/settings'
-      };
-      window.history.pushState({}, '', pathMap[tab] || '/');
-      setIsTransitioning(false);
-    }, 200); // 200ms loader
+    setActiveTab(tab);
+    const pathMap = {
+      dashboard: '/',
+      'manual-sync': '/manual-sync',
+      settings: '/settings'
+    };
+    window.history.pushState({}, '', pathMap[tab] || '/');
   }, [activeTab]);
 
   return (
@@ -229,45 +221,34 @@ export default function App() {
 
         {/* Page Content */}
         <div className="p-8 relative flex-1">
-          
-          {/* ✅ Transition Loader */}
-          {isTransitioning ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#F8F9FA] z-10">
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 animate-spin text-[#008060]" />
-                <p className="text-sm text-gray-500 font-medium">Loading...</p>
-              </div>
-            </div>
-          ) : (
-            <ErrorBoundary>
-              {activeTab === 'dashboard' && (
-                <DashboardView
-                  API_URL={API_URL}
-                  selectedStoreId={selectedStoreId}
-                  url={url} setUrl={setUrl}
-                  loading={loading} onSubmit={handleModalImport}
-                  stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-                  collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-                  markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-                  error={error} successMsg={successMsg}
-                  onOpenImportModal={() => setIsModalOpen(true)}
-                />
-              )}
+          <ErrorBoundary>
+            {activeTab === 'dashboard' && (
+              <DashboardView
+                API_URL={API_URL}
+                selectedStoreId={selectedStoreId}
+                url={url} setUrl={setUrl}
+                loading={loading} onSubmit={handleModalImport}
+                stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
+                collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
+                markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+                error={error} successMsg={successMsg}
+                onOpenImportModal={() => setIsModalOpen(true)}
+              />
+            )}
 
-              {activeTab === 'manual-sync' && (
-                <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
-              )}
+            {activeTab === 'manual-sync' && (
+              <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
+            )}
 
-              {activeTab === 'settings' && (
-                <Settings 
-                  onBack={handleBackFromSettings} 
-                  storeId={selectedStoreId} 
-                  API_URL={API_URL}
-                  shopDomain={selectedStore} 
-                />
-              )}
-            </ErrorBoundary>
-          )}
+            {activeTab === 'settings' && (
+              <Settings 
+                onBack={handleBackFromSettings} 
+                storeId={selectedStoreId} 
+                API_URL={API_URL}
+                shopDomain={selectedStore} 
+              />
+            )}
+          </ErrorBoundary>
         </div>
       </main>
 
