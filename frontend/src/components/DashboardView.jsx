@@ -17,7 +17,7 @@ export default function DashboardView({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // ✅ STORE ID SAY PRODUCTS FETCH KARNE KA LOGIC
+  // ✅ DATA FETCH LOGIC
   useEffect(() => {
     const fetchProducts = async () => {
       if (!selectedStoreId) {
@@ -27,17 +27,21 @@ export default function DashboardView({
       
       setLoading(true);
       try {
-        // 🔴 YAHAN APNA BACKEND ENDPOINT DAALEIN (Jo saare products return karta ho)
-        // Misaal ke taur par: /products?store_id=123 ya /all-products?store_id=123
-        const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
+        // 🔴 YAHAN APNA SAHI ENDPOINT DAALEIN. 
+        // Abhi ke liye maine dashboard-stats use kiya hai jo 'recent_products' bhejta hai.
+        const res = await axios.get(`${API_URL}/dashboard-stats?store_id=${selectedStoreId}`);
         
-        // Data mapping: Check karein backend direct array bhej raha hai ya object ke andar
-        if (Array.isArray(res.data)) {
+        // Agar response mein recent_products hai
+        if (res.data && res.data.recent_products) {
+          setProducts(res.data.recent_products);
+        } 
+        // Agar direct array hai
+        else if (Array.isArray(res.data)) {
           setProducts(res.data);
-        } else if (res.data && res.data.products) {
+        } 
+        // Agar object ke andar products key hai
+        else if (res.data && res.data.products) {
           setProducts(res.data.products);
-        } else if (res.data && res.data.data) {
-          setProducts(res.data.data);
         } else {
           setProducts([]);
         }
@@ -168,11 +172,12 @@ export default function DashboardView({
                   <td colSpan="8" className="p-8 text-center text-gray-500">Loading products...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
+                // ✅ FIX: Text tootne ki problem yahan fix ki gayi hai
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500">
+                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
                       <Package size={40} className="text-gray-300 mb-3" />
-                      <p className="text-base font-medium">No products found for this store.</p>
+                      <p className="text-base font-medium">No products found.</p>
                       {searchQuery || activeFilter !== 'All' ? (
                         <p className="text-sm text-gray-400 mt-1">Try adjusting your search or filters.</p>
                       ) : null}
