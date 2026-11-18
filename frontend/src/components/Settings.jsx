@@ -1,60 +1,18 @@
 // src/components/Settings.jsx
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import axios from 'axios'; 
 import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles, TrendingUp } from 'lucide-react';
-import Loader from './Loader';
 
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
-// ✅ shopDomain prop receive karein backend fetch ke liye
-export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDomain, onReady }) {
-  const API_URL = propApiUrl || import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
-
-  const [markup, setMarkup] = useState('0');
-  const [markupType, setMarkupType] = useState('percent');
-  const [extraPercent, setExtraPercent] = useState('0');
-  const [taxRate, setTaxRate] = useState('0');
-  const [comparePriceMarkup, setComparePriceMarkup] = useState('0');
+export default function Settings({ onBack, storeId }) {
+  const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
+  const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
+  const [extraPercent, setExtraPercent] = useState(localStorage.getItem('global_extra_percent') || '0');
+  const [taxRate, setTaxRate] = useState(localStorage.getItem('global_tax_rate') || '0');
+  const [comparePriceMarkup, setComparePriceMarkup] = useState(localStorage.getItem('global_compare_markup') || '0');
   const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  // ✅ 1. Page load hone par Database se settings fetch karein
-  useEffect(() => {
-    const fetchSettings = async () => {
-      if (!shopDomain) {
-        setLoading(false);
-        onReady?.(); // ✅ No shop? Turant ready
-        return;
-      }
-      
-      try {
-        const res = await axios.get(`${API_URL}/app/store-settings/${shopDomain}`);
-        const data = res.data;
-        
-        setMarkup(data.markup?.toString() || '0');
-        setMarkupType(data.markup_type || 'percent');
-        setExtraPercent(data.extra_percent?.toString() || '0');
-        setTaxRate(data.tax_rate?.toString() || '0');
-        setComparePriceMarkup(data.compare_price_markup?.toString() || '0');
-
-      } catch (error) {
-        console.error("Failed to fetch settings from DB", error);
-        // Agar fetch fail ho jaye toh localStorage se utha lein
-        setMarkup(localStorage.getItem('global_markup') || '0');
-        setMarkupType(localStorage.getItem('global_markup_type') || 'percent');
-        setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
-        setTaxRate(localStorage.getItem('global_tax_rate') || '0');
-        setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
-      } finally {
-        setLoading(false);
-        onReady?.(); // ✅ Fetch complete — global loader hatao
-      }
-    };
-    
-    fetchSettings();
-  }, [shopDomain, API_URL]);
-
-  // ✅ 2. Settings Save karein
   const handleSave = async () => {
     if (!storeId) {
       alert("No store connected. Please reload the app.");
@@ -63,7 +21,7 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
 
     const finalExtraPercent = markupType === 'both' ? parseFloat(extraPercent || 0) : 0;
 
-    // Save to LocalStorage (Dashboard instant update ke liye)
+    // 1. Save to LocalStorage (Dashboard ke liye)
     localStorage.setItem('global_markup', markup);
     localStorage.setItem('global_markup_type', markupType);
     localStorage.setItem('global_extra_percent', finalExtraPercent.toString());
@@ -71,7 +29,7 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
     localStorage.setItem('global_compare_markup', comparePriceMarkup);
 
     try {
-      // Save to Database
+      // 2. Save to Database (Backend)
       await axios.post(`${API_URL}/app/save-settings`, {
         store_id: storeId,
         markup: parseFloat(markup || 0),
@@ -95,10 +53,6 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
     }
   };
 
-  // ✅ 3. Global loader handle kar raha hai — local loader hata diya
-  // (onReady callback se App.jsx ka isPageLoading false hota hai)
-  if (loading) return null;
-
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-8">
       
@@ -118,7 +72,7 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
         </div>
       </div>
 
-      {/* Grid Layout */}
+      {/* ✅ Grid Layout (Sab kuch columns mein) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
         
         {/* 1. Markup Strategy */}
@@ -197,7 +151,7 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
         </div>
       </div>
 
-      {/* Info Text */}
+      {/* Info Text for Extra Percent / Tax / Compare */}
       <div className="mt-4 max-w-4xl text-xs text-gray-500 space-y-1">
         {markupType === 'both' && <p>* Extra percentage is applied after fixed amount markup.</p>}
         <p>* Tax Rate will be added on top of the final calculated price.</p>

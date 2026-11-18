@@ -1,7 +1,7 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
 
@@ -10,28 +10,22 @@ export default function DashboardView({
   markup, markupType, extraPercent, taxRate,
   API_URL,
   selectedStoreId,
-  onOpenImportModal,
-  onReady 
+  onOpenImportModal 
 }) {
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true); 
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
   useEffect(() => {
-    let isMounted = true;
-
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
         setLoading(false);
-        if (isMounted && onReady) onReady();
         return;
       }
-      
       setLoading(true);
       setError('');
-      
       try {
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
         if (Array.isArray(res.data)) setProducts(res.data);
@@ -41,21 +35,11 @@ export default function DashboardView({
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
-        if (isMounted) {
-          setLoading(false);
-          if (onReady) onReady();
-        }
+        setLoading(false);
       }
     };
-
     fetchAllProducts();
-
-    return () => {
-      isMounted = false;
-    };
-    // ✅ onReady ko dependency se hata diya taake infinite loop na bane
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [API_URL, selectedStoreId]); 
+  }, [API_URL, selectedStoreId]);
 
   const handleCollectionToggle = (id) => {
     if (selectedCollections.includes(id)) {
@@ -178,8 +162,11 @@ export default function DashboardView({
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="p-12 text-center text-gray-500">
-                    Loading products...
+                  <td colSpan="8" className="p-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
+                      <Loader2 className="animate-spin text-green-600 mb-3" size={32} />
+                      <p className="text-base font-medium">Fetching products...</p>
+                    </div>
                   </td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
