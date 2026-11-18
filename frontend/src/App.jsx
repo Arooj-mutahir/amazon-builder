@@ -1,7 +1,8 @@
 // src/App.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { Plus } from 'lucide-react'; 
+import { Plus, AlertTriangle } from 'lucide-react'; 
+import Loader from './components/Loader';
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -10,8 +11,38 @@ import ImportModal from './components/ImportModal';
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
+// ✅ Error Boundary: Agar koi component crash ho toh black screen na aaye
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 flex flex-col items-center justify-center text-center h-full">
+          <AlertTriangle size={48} className="text-red-500 mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Kuch Gadbad Ho Gayi!</h2>
+          <p className="text-gray-500 mb-4">Page load karte waqt error aa gaya. Kripya page refresh karein.</p>
+          <button onClick={() => window.location.reload()} className="bg-gray-900 text-white px-4 py-2 rounded-lg">
+            Refresh Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // ✅ Loader States
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  const [tabKey, setTabKey] = useState(0);
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,7 +50,6 @@ export default function App() {
   const [successMsg, setSuccessMsg] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // ✅ Modal reset karne ke liye key
   const [modalKey, setModalKey] = useState(0); 
 
   const [stores, setStores] = useState([]);
@@ -36,6 +66,16 @@ export default function App() {
   const [selectedCollections, setSelectedCollections] = useState([]);
 
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
+
+  // ✅ Global Safety Timeout (Agar 2 second tak onReady na aaye toh loader hata do)
+  useEffect(() => {
+    if (isPageLoading) {
+      const timeout = setTimeout(() => {
+        setIsPageLoading(false);
+      }, 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isPageLoading]);
 
   // URL-based initial tab detection
   useEffect(() => {
@@ -59,9 +99,7 @@ export default function App() {
         if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
-
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
-
           setSelectedStore(foundStore.shop_domain);
           setSelectedStoreId(foundStore.id);
         }
@@ -72,7 +110,7 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // Keep selectedStoreId in sync whenever selectedStore changes
+  // Keep selectedStoreId in sync
   useEffect(() => {
     if (!selectedStore || stores.length === 0) return;
     const store = stores.find(s => s.shop_domain === selectedStore);
@@ -81,14 +119,12 @@ export default function App() {
     }
   }, [selectedStore, stores, selectedStoreId]);
 
-  // Fetch collections when store changes; reset selected collections
+  // Fetch collections
   useEffect(() => {
     let cancelled = false;
-
     const fetchCollections = async () => {
       setSelectedCollections([]);
       setCollections([]);
-
       if (!selectedStore) return;
 
       try {
@@ -100,7 +136,6 @@ export default function App() {
         console.error("Failed to fetch collections", err);
       }
     };
-
     fetchCollections();
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
@@ -132,11 +167,8 @@ export default function App() {
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
-      
-      // ✅ Input clear aur Modal reset
       setUrl(''); 
       setModalKey(prev => prev + 1); 
-
       setIsModalOpen(false);
     } catch (err) {
       const msg = err.response?.data?.detail || 'Failed to connect to backend.';
@@ -153,24 +185,35 @@ export default function App() {
     setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
+    
+    setIsPageLoading(true);
+    setTabKey(k => k + 1);
     setActiveTab('dashboard');
     window.history.pushState({}, '', '/');
   }, []);
 
   const handleTabChange = useCallback((tab) => {
+    if (tab === activeTab) return;
+    
+    setIsPageLoading(true);
+    setTabKey(k => k + 1);
     setActiveTab(tab);
+    
     const pathMap = {
       dashboard: '/',
       'manual-sync': '/manual-sync',
       settings: '/settings'
     };
     window.history.pushState({}, '', pathMap[tab] || '/');
+  }, [activeTab]);
+
+  const handleReady = useCallback(() => {
+    setIsPageLoading(false);
   }, []);
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
         {/* Top Header */}
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
@@ -199,32 +242,47 @@ export default function App() {
         </header>
 
         {/* Page Content */}
-        <div className="p-8">
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              API_URL={API_URL}
-              selectedStoreId={selectedStoreId}
-              url={url} setUrl={setUrl}
-              loading={loading} onSubmit={handleModalImport}
-              stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-              collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-              markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-              error={error} successMsg={successMsg}
-              onOpenImportModal={() => setIsModalOpen(true)}
-            />
-          )}
+        <div className="p-8 relative flex-1 bg-[#F8F9FA]">
+          {isPageLoading ? (
+            <div className="w-full h-full flex items-center justify-center">
+              <Loader message="Loading page..." />
+            </div>
+          ) : (
+            <ErrorBoundary>
+              {activeTab === 'dashboard' && (
+                <DashboardView
+                  key={tabKey}
+                  API_URL={API_URL}
+                  selectedStoreId={selectedStoreId}
+                  url={url} setUrl={setUrl}
+                  loading={loading} onSubmit={handleModalImport}
+                  stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
+                  collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
+                  markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+                  error={error} successMsg={successMsg}
+                  onOpenImportModal={() => setIsModalOpen(true)}
+                  onReady={handleReady}
+                />
+              )}
 
-          {activeTab === 'manual-sync' && (
-            <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
-          )}
+              {activeTab === 'manual-sync' && (
+                <ManualSync 
+                  API_URL={API_URL} 
+                  selectedStoreId={selectedStoreId}
+                  onReady={handleReady} 
+                />
+              )}
 
-          {activeTab === 'settings' && (
-            <Settings 
-              onBack={handleBackFromSettings} 
-              storeId={selectedStoreId} 
-              API_URL={API_URL}
-              shopDomain={selectedStore} // ✅ YEH NAYA PROP PASS KIYA GAYA HAI
-            />
+              {activeTab === 'settings' && (
+                <Settings 
+                  onBack={handleBackFromSettings} 
+                  storeId={selectedStoreId} 
+                  API_URL={API_URL}
+                  shopDomain={selectedStore}
+                  onReady={handleReady}
+                />
+              )}
+            </ErrorBoundary>
           )}
         </div>
       </main>
