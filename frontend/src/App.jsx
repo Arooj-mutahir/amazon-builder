@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { LayoutDashboard, RefreshCw, Settings as SettingsIcon, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react'; // Sirf Plus icon chahiye ab
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -160,48 +160,8 @@ export default function App() {
     window.history.pushState({}, '', pathMap[tab] || '/');
   }, []);
 
-  const subtitles = {
-    dashboard: 'Overview of your Amazon catalog imports, pricing rules, and real-time sync health.',
-    'manual-sync': 'Trigger and review manual syncs across your connected Shopify store.',
-    settings: 'Configure pricing rules, markup, tax, and compare-at price behavior.'
-  };
-
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
-
-      {/* Top Navigation (Mobile/Tablet friendly, Sidebar removed) */}
-      <nav className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="bg-green-600 text-white p-2 rounded-lg">
-            <LayoutDashboard size={20} />
-          </div>
-          <div>
-            <h1 className="font-bold text-sm">Amazon Product</h1>
-            <p className="text-xs text-gray-500">Manager</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 md:gap-4">
-           <NavItem
-              icon={<LayoutDashboard size={18} />}
-              label="Dashboard"
-              active={activeTab === 'dashboard'}
-              onClick={() => handleTabChange('dashboard')}
-            />
-            <NavItem
-              icon={<RefreshCw size={18} />}
-              label="Manual Sync"
-              active={activeTab === 'manual-sync'}
-              onClick={() => handleTabChange('manual-sync')}
-            />
-            <NavItem
-              icon={<SettingsIcon size={18} />}
-              label="Settings"
-              active={activeTab === 'settings'}
-              onClick={() => handleTabChange('settings')}
-            />
-        </div>
-      </nav>
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
@@ -210,7 +170,7 @@ export default function App() {
           <div className="flex flex-col">
             <h2 className="text-xl font-bold capitalize">{activeTab.replace('-', ' ')}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {subtitles[activeTab] || subtitles.dashboard}
+              Overview of your Amazon catalog imports, pricing rules, and real-time sync health.
             </p>
           </div>
 
@@ -273,24 +233,5 @@ export default function App() {
         setSelectedCollections={setSelectedCollections}
       />
     </div>
-  );
-}
-
-// Navigation Helper (Adjusted for Top Bar)
-function NavItem({ icon, label, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-current={active ? 'page' : undefined}
-      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-        active
-          ? 'bg-gray-100 text-gray-900'
-          : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-      }`}
-    >
-      {icon}
-      {/* Hide text on small screens, show on larger screens */}
-      <span className="hidden sm:block">{label}</span>
-    </button>
   );
 }

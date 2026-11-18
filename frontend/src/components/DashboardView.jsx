@@ -110,12 +110,11 @@ export default function DashboardView({
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Active Pricing & Collections (URL aur Button hata diya) */}
+        {/* Active Pricing & Collections */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Current Settings</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-6">Current Settings</h3>
           
-          {/* ✅ Sirf Pricing aur Collections, URL & Button nahi */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
             <PricingSummary 
               markup={markup} 
               markupType={markupType} 
