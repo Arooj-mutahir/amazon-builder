@@ -196,13 +196,24 @@ export default function App() {
         </header>
 
         <div className="p-8">
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              API_URL={API_URL}
-              selectedStoreId={selectedStoreId}
-              onOpenImportModal={() => setIsModalOpen(true)}
-            />
-          )}
+          // src/App.jsx mein (jahan activeTab === 'dashboard' hai wahan):
+
+{activeTab === 'dashboard' && (
+  <DashboardView
+    API_URL={API_URL}
+    selectedStoreId={selectedStoreId}
+    // ✅ In props ko pass karein taake Design load ho
+    collections={collections} 
+    selectedCollections={selectedCollections} 
+    setSelectedCollections={setSelectedCollections}
+    markup={markup} 
+    markupType={markupType} 
+    extraPercent={extraPercent} 
+    taxRate={taxRate}
+    
+    onOpenImportModal={() => setIsModalOpen(true)}
+  />
+)}
 
           {activeTab === 'manual-sync' && (
             <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
