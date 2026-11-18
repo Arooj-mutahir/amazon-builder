@@ -1,27 +1,29 @@
 // src/App.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { LayoutDashboard, RefreshCw, Settings as SettingsIcon, Plus } from 'lucide-react';
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
 import ManualSync from './components/ManualSync';
-import ImportModal from './components/ImportModal'; 
+import ImportModal from './components/ImportModal';
+
+const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); 
-  
+  const [activeTab, setActiveTab] = useState('dashboard');
+
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedStoreId, setSelectedStoreId] = useState(null);
-  
+
   const [markup, setMarkup] = useState(() => localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(() => localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(() => localStorage.getItem('global_extra_percent') || '0');
@@ -31,10 +33,9 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
-  // URL ke hisaab se tab change
+  // URL-based initial tab detection
   useEffect(() => {
     const path = window.location.pathname;
     if (path.includes('settings')) {
@@ -46,19 +47,19 @@ export default function App() {
     }
   }, []);
 
-  // Stores fetch
+  // Fetch stores on mount
   useEffect(() => {
     const fetchStores = async () => {
       try {
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
-        
+
         if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
-          
+
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
-          
+
           setSelectedStore(foundStore.shop_domain);
           setSelectedStoreId(foundStore.id);
         }
@@ -69,30 +70,55 @@ export default function App() {
     fetchStores();
   }, [API_URL]);
 
-  // Collections fetch
+  // Keep selectedStoreId in sync whenever selectedStore changes
   useEffect(() => {
+    if (!selectedStore || stores.length === 0) return;
+    const store = stores.find(s => s.shop_domain === selectedStore);
+    if (store && store.id !== selectedStoreId) {
+      setSelectedStoreId(store.id);
+    }
+  }, [selectedStore, stores, selectedStoreId]);
+
+  // Fetch collections when store changes; reset selected collections
+  useEffect(() => {
+    let cancelled = false;
+
     const fetchCollections = async () => {
+      setSelectedCollections([]);
+      setCollections([]);
+
       if (!selectedStore) return;
+
       try {
         const res = await axios.get(`${API_URL}/collections?shop=${selectedStore}`);
-        if (res.data.collections) setCollections(res.data.collections);
+        if (!cancelled && res.data.collections) {
+          setCollections(res.data.collections);
+        }
       } catch (err) {
         console.error("Failed to fetch collections", err);
       }
     };
+
     fetchCollections();
+    return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
 
-  const handleModalImport = async (importUrl) => {
-    if (!importUrl) return alert("Please enter a valid URL");
-    if (!selectedStore) return alert("Please connect a Shopify store first");
-    
+  const handleModalImport = useCallback(async (importUrl) => {
+    if (!importUrl) {
+      setError("Please enter a valid URL");
+      return;
+    }
+    if (!selectedStore) {
+      setError("Please connect a Shopify store first");
+      return;
+    }
+
     setLoading(true);
     setError('');
     setSuccessMsg('');
 
     try {
-      const res = await axios.post(`${API_URL}/app/add-product`, { 
+      const res = await axios.post(`${API_URL}/app/add-product`, {
         amazon_url: importUrl,
         shop_domain: selectedStore,
         markup: parseFloat(markup),
@@ -106,70 +132,76 @@ export default function App() {
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
       setIsModalOpen(false);
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to connect to backend.');
+      const msg = err.response?.data?.detail || 'Failed to connect to backend.';
+      setError(msg);
+      alert(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }, [API_URL, selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections]);
 
-  const handleBackFromSettings = () => {
+  const handleBackFromSettings = useCallback(() => {
     setMarkup(localStorage.getItem('global_markup') || '0');
     setMarkupType(localStorage.getItem('global_markup_type') || 'percent');
     setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
     setActiveTab('dashboard');
-    window.history.pushState({}, '', '/'); 
+    window.history.pushState({}, '', '/');
+  }, []);
+
+  const handleTabChange = useCallback((tab) => {
+    setActiveTab(tab);
+    const pathMap = {
+      dashboard: '/',
+      'manual-sync': '/manual-sync',
+      settings: '/settings'
+    };
+    window.history.pushState({}, '', pathMap[tab] || '/');
+  }, []);
+
+  const subtitles = {
+    dashboard: 'Overview of your Amazon catalog imports, pricing rules, and real-time sync health.',
+    'manual-sync': 'Trigger and review manual syncs across your connected Shopify store.',
+    settings: 'Configure pricing rules, markup, tax, and compare-at price behavior.'
   };
 
   return (
-    <div className="flex h-screen bg-[#F8F9FA] font-sans text-gray-800">
-      
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex">
-        <div>
-          <div className="p-6 flex items-center gap-3">
-            <div className="bg-green-600 text-white p-2 rounded-lg">
-              <LayoutDashboard size={20} />
-            </div>
-            <div>
-              <h1 className="font-bold text-sm">Amazon Product</h1>
-              <p className="text-xs text-gray-500">Manager</p>
-            </div>
-          </div>
+    <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
 
-          <nav className="mt-4 px-3 space-y-1">
-            <NavItem 
-              icon={<LayoutDashboard size={18} />} 
-              label="Dashboard" 
-              active={activeTab === 'dashboard'} 
-              onClick={() => setActiveTab('dashboard')} 
-            />
-            <NavItem 
-              icon={<RefreshCw size={18} />} 
-              label="Manual Sync" 
-              active={activeTab === 'manual-sync'} 
-              onClick={() => setActiveTab('manual-sync')} 
-            />
-            <NavItem 
-              icon={<SettingsIcon size={18} />} 
-              label="Settings" 
-              active={activeTab === 'settings'} 
-              onClick={() => setActiveTab('settings')} 
-            />
-          </nav>
+      {/* Top Navigation (Mobile/Tablet friendly, Sidebar removed) */}
+      <nav className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="bg-green-600 text-white p-2 rounded-lg">
+            <LayoutDashboard size={20} />
+          </div>
+          <div>
+            <h1 className="font-bold text-sm">Amazon Product</h1>
+            <p className="text-xs text-gray-500">Manager</p>
+          </div>
         </div>
 
-        <div className="p-4 border-t border-gray-100 space-y-3">
-          <div className="flex items-center justify-between text-xs font-medium text-gray-600">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span> Store Connected
-            </div>
-            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-500">US</span>
-          </div>
-          <p className="text-[10px] text-gray-400 truncate px-1">{selectedStore || "No store connected"}</p>
+        <div className="flex items-center gap-2 md:gap-4">
+           <NavItem
+              icon={<LayoutDashboard size={18} />}
+              label="Dashboard"
+              active={activeTab === 'dashboard'}
+              onClick={() => handleTabChange('dashboard')}
+            />
+            <NavItem
+              icon={<RefreshCw size={18} />}
+              label="Manual Sync"
+              active={activeTab === 'manual-sync'}
+              onClick={() => handleTabChange('manual-sync')}
+            />
+            <NavItem
+              icon={<SettingsIcon size={18} />}
+              label="Settings"
+              active={activeTab === 'settings'}
+              onClick={() => handleTabChange('settings')}
+            />
         </div>
-      </aside>
+      </nav>
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
@@ -177,30 +209,32 @@ export default function App() {
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex flex-col">
             <h2 className="text-xl font-bold capitalize">{activeTab.replace('-', ' ')}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">Overview of your Amazon catalog imports, pricing rules, and real-time sync health.</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {subtitles[activeTab] || subtitles.dashboard}
+            </p>
           </div>
-          
+
           <div className="flex items-center gap-3">
-             <button 
-               onClick={() => setActiveTab('manual-sync')}
-               className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
-             >
-               View Sync Logs
-             </button>
-             
-             <button 
-               onClick={() => setIsModalOpen(true)}
-               className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
-             >
-               <Plus size={16} /> Import Products
-             </button>
+            <button
+              onClick={() => handleTabChange('manual-sync')}
+              className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              View Sync Logs
+            </button>
+
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+            >
+              <Plus size={16} /> Import Products
+            </button>
           </div>
         </header>
 
         {/* Page Content */}
         <div className="p-8">
           {activeTab === 'dashboard' && (
-            <DashboardView 
+            <DashboardView
               API_URL={API_URL}
               selectedStoreId={selectedStoreId}
               url={url} setUrl={setUrl}
@@ -211,45 +245,52 @@ export default function App() {
               error={error} successMsg={successMsg}
             />
           )}
-          
+
           {activeTab === 'manual-sync' && (
             <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
           )}
-          
+
           {activeTab === 'settings' && (
             <Settings onBack={handleBackFromSettings} storeId={selectedStoreId} />
           )}
         </div>
       </main>
 
-      {/* ✅ Global Import Modal */}
-      <ImportModal 
+      {/* Global Import Modal */}
+      <ImportModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onImport={handleModalImport}
         loading={loading}
-        markup={markup}              // ✅ Pass karein
-        markupType={markupType}      // ✅ Pass karein
-        extraPercent={extraPercent}  // ✅ Pass karein
-        taxRate={taxRate}            // ✅ Pass karein
+        error={error}
+        markup={markup}
+        markupType={markupType}
+        extraPercent={extraPercent}
+        taxRate={taxRate}
+        comparePriceMarkup={comparePriceMarkup}
+        collections={collections}
+        selectedCollections={selectedCollections}
+        setSelectedCollections={setSelectedCollections}
       />
     </div>
   );
 }
 
-// Sidebar Navigation Helper
+// Navigation Helper (Adjusted for Top Bar)
 function NavItem({ icon, label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-        active 
-          ? 'bg-gray-100 text-gray-900' 
+      aria-current={active ? 'page' : undefined}
+      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+        active
+          ? 'bg-gray-100 text-gray-900'
           : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
       }`}
     >
       {icon}
-      {label}
+      {/* Hide text on small screens, show on larger screens */}
+      <span className="hidden sm:block">{label}</span>
     </button>
   );
 }
