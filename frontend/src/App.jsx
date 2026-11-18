@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Plus } from 'lucide-react'; // Sirf Plus icon chahiye ab
+import { Plus } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -19,6 +19,8 @@ export default function App() {
   const [successMsg, setSuccessMsg] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // ✅ NAYA STATE: Modal reset karne ke liye key
+  const [modalKey, setModalKey] = useState(0); 
 
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
@@ -130,6 +132,11 @@ export default function App() {
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
+      
+      // ✅ CHANGES YAHAN HAIN: Input clear aur Modal reset
+      setUrl(''); 
+      setModalKey(prev => prev + 1); // Key change hui, modal reset ho jayega
+
       setIsModalOpen(false);
     } catch (err) {
       const msg = err.response?.data?.detail || 'Failed to connect to backend.';
@@ -217,7 +224,9 @@ export default function App() {
       </main>
 
       {/* Global Import Modal */}
+      {/* ✅ Yahan modalKey pass ki hai, jisse modal clear ho jayega */}
       <ImportModal
+        key={modalKey} 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onImport={handleModalImport}
