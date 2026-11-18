@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useState, useEffect, useCallback, useRef, Component } from 'react';
+import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
 import { Plus, AlertTriangle } from 'lucide-react';
 import Loader from './components/Loader';
@@ -39,24 +39,16 @@ class ErrorBoundary extends Component {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  
-  // ✅ GLOBAL PAGE LOADING STATE — tab change hote hi true hota hai
   const [isPageLoading, setIsPageLoading] = useState(true);
-  // ✅ Tab transition key — component ko force remount karne ke liye
   const [tabKey, setTabKey] = useState(0);
-
-  // ✅ NAYA STATE: Auto-Sync status (Dono components ke liye common)
-  // null = abhi fetch nahi hua (spinner dikhao), true/false = fetched
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
-
+  
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalKey, setModalKey] = useState(0); 
-
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedStoreId, setSelectedStoreId] = useState(null);
@@ -75,22 +67,17 @@ export default function App() {
   // URL-based initial tab detection
   useEffect(() => {
     const path = window.location.pathname;
-    if (path.includes('settings')) {
-      setActiveTab('settings');
-    } else if (path.includes('manual-sync')) {
-      setActiveTab('manual-sync');
-    } else {
-      setActiveTab('dashboard');
-    }
+    if (path.includes('settings')) setActiveTab('settings');
+    else if (path.includes('manual-sync')) setActiveTab('manual-sync');
+    else setActiveTab('dashboard');
   }, []);
 
-  // Fetch stores on mount
+  // Fetch stores
   useEffect(() => {
     const fetchStores = async () => {
       try {
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
-
         if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
@@ -109,9 +96,7 @@ export default function App() {
   useEffect(() => {
     if (!selectedStore || stores.length === 0) return;
     const store = stores.find(s => s.shop_domain === selectedStore);
-    if (store && store.id !== selectedStoreId) {
-      setSelectedStoreId(store.id);
-    }
+    if (store && store.id !== selectedStoreId) setSelectedStoreId(store.id);
   }, [selectedStore, stores, selectedStoreId]);
 
   // Fetch collections
@@ -121,12 +106,9 @@ export default function App() {
       setSelectedCollections([]);
       setCollections([]);
       if (!selectedStore) return;
-
       try {
         const res = await axios.get(`${API_URL}/collections?shop=${selectedStore}`);
-        if (!cancelled && res.data.collections) {
-          setCollections(res.data.collections);
-        }
+        if (!cancelled && res.data.collections) setCollections(res.data.collections);
       } catch (err) {
         console.error("Failed to fetch collections", err);
       }
@@ -135,7 +117,7 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
 
-  // ✅ FETCH AUTO-SYNC STATUS
+  // Fetch auto-sync status
   useEffect(() => {
     const fetchAutoSyncStatus = async () => {
       if (!selectedStoreId) return;
@@ -144,22 +126,18 @@ export default function App() {
         setIsAutoSyncEnabled(res.data.enabled);
       } catch (err) {
         console.error("Failed to fetch auto-sync status", err);
-        setIsAutoSyncEnabled(false); // fallback: null se false kar do
+        setIsAutoSyncEnabled(false);
       }
     };
     fetchAutoSyncStatus();
   }, [API_URL, selectedStoreId]);
 
-  // ✅ TOGGLE FUNCTION
   const handleToggleAutoSync = useCallback(async () => {
-    if (isAutoSyncEnabled === null) return; // abhi fetch nahi hua
+    if (isAutoSyncEnabled === null) return;
     const newState = !isAutoSyncEnabled;
     setIsAutoSyncEnabled(newState);
-
     try {
-      await axios.post(`${API_URL}/auto-sync/toggle?store_id=${selectedStoreId}`, {
-        enabled: newState
-      });
+      await axios.post(`${API_URL}/auto-sync/toggle?store_id=${selectedStoreId}`, { enabled: newState });
     } catch (err) {
       console.error("Failed to update auto-sync", err);
       setIsAutoSyncEnabled(!newState);
@@ -167,16 +145,9 @@ export default function App() {
     }
   }, [isAutoSyncEnabled, API_URL, selectedStoreId]);
 
-  // ✅ FIX: autoSync argument receive karein
   const handleModalImport = useCallback(async (importUrl, autoSync = true) => {
-    if (!importUrl) {
-      setError("Please enter a valid URL");
-      return;
-    }
-    if (!selectedStore) {
-      setError("Please connect a Shopify store first");
-      return;
-    }
+    if (!importUrl) { setError("Please enter a valid URL"); return; }
+    if (!selectedStore) { setError("Please connect a Shopify store first"); return; }
 
     setLoading(true);
     setError('');
@@ -192,9 +163,8 @@ export default function App() {
         tax_rate: parseFloat(taxRate),
         compare_price_markup: parseFloat(comparePriceMarkup),
         collection_ids: selectedCollections,
-        auto_sync: autoSync // ✅ Backend ko bhejein
+        auto_sync: autoSync
       });
-
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
       setUrl(''); 
       setModalKey(prev => prev + 1); 
@@ -223,15 +193,10 @@ export default function App() {
 
   const handleTabChange = useCallback((tab) => {
     if (tab === activeTab) return;
-    // ✅ Tab change hote hi TURANT global loader on karo
     setIsPageLoading(true);
-    setTabKey(k => k + 1); // force remount — purana content bilkul nahi dikhega
+    setTabKey(k => k + 1); // Force remount — purana content destroy ho jayega
     setActiveTab(tab);
-    const pathMap = {
-      dashboard: '/',
-      'manual-sync': '/manual-sync',
-      settings: '/settings'
-    };
+    const pathMap = { dashboard: '/', 'manual-sync': '/manual-sync', settings: '/settings' };
     window.history.pushState({}, '', pathMap[tab] || '/');
   }, [activeTab]);
 
@@ -248,30 +213,22 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => handleTabChange('manual-sync')}
-              className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
-            >
+            <button onClick={() => handleTabChange('manual-sync')} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
               View Sync Logs
             </button>
-
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
-            >
+            <button onClick={() => setIsModalOpen(true)} className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm">
               <Plus size={16} /> Import Products
             </button>
           </div>
         </header>
 
-        <div className="p-8 relative flex-1">
-          {/* ✅ GLOBAL PAGE LOADER — tab change hote hi turant dikhta hai */}
-          {isPageLoading && (
-            <Loader message="Loading page..." />
-          )}
-
-          {/* ✅ Content sirf tab dikhao jab loading khatam ho */}
-          <div style={{ display: isPageLoading ? 'none' : 'block' }}>
+        <div className="p-8 relative flex-1 bg-[#F8F9FA]">
+          {/* ✅ FIX: Jab load ho raha ho toh sirf Loader dikhe, content hide rahe */}
+          {isPageLoading ? (
+            <div className="w-full h-full flex items-center justify-center">
+              <Loader message="Loading page..." />
+            </div>
+          ) : (
             <ErrorBoundary>
               {activeTab === 'dashboard' && (
                 <DashboardView
@@ -311,7 +268,7 @@ export default function App() {
                 />
               )}
             </ErrorBoundary>
-          </div>
+          )}
         </div>
       </main>
 

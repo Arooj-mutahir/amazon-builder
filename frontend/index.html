@@ -5,39 +5,24 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-    <!-- ✅ Shopify App Bridge Configuration -->
     <meta name="shopify-api-key" content="9d6b40c544f3aca32f92e18dee8041ff" />
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 
     <title>Amazon to Shopify</title>
 
-    <!-- ✅ FIXED SCRIPT: Black Flash Rokne Ke Liye -->
-    <script>
-      (function() {
-        try {
-          // Agar aap Dark mode use nahi kar rahe, toh use hamesha light hi rakhein
-          // Ya fir agar user dark mode chahta hai toh localstorage se uthayein
-          const savedTheme = localStorage.getItem('theme');
-          const isDark = savedTheme === 'dark';
-          
-          if (isDark) {
-            document.documentElement.classList.add('dark');
-            document.documentElement.style.backgroundColor = '#111827'; // Dark
-          } else {
-            document.documentElement.classList.remove('dark');
-            document.documentElement.style.backgroundColor = '#F8F9FA'; // Light
-          }
-        } catch (e) {
-          console.error("Theme script error:", e);
-        }
-      })();
-    </script>
-    <!-- ✅ FIXED SCRIPT END -->
+    <!-- ✅ Sirf White Background, Koi Theme Nahi -->
+    <style>
+      html, body, #root {
+        background-color: #F8F9FA !important;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
 
-    <!-- ✅ Shopify Sidebar Navigation -->
     <s-app-nav>
       <s-link href="/manual-sync">Manual Sync</s-link>
       <s-link href="/settings">Settings</s-link>
