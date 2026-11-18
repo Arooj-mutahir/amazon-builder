@@ -11,24 +11,28 @@
 
     <title>Amazon to Shopify</title>
 
-    <!-- ✅ NAYA SCRIPT: White Screen Flash Rokne Ke Liye -->
+    <!-- ✅ FIXED SCRIPT: Black Flash Rokne Ke Liye -->
     <script>
       (function() {
         try {
+          // Agar aap Dark mode use nahi kar rahe, toh use hamesha light hi rakhein
+          // Ya fir agar user dark mode chahta hai toh localstorage se uthayein
           const savedTheme = localStorage.getItem('theme');
-          const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          const isDark = savedTheme === 'dark';
           
           if (isDark) {
             document.documentElement.classList.add('dark');
-            document.documentElement.style.backgroundColor = '#111827'; // Tailwind gray-900 (Dark)
+            document.documentElement.style.backgroundColor = '#111827'; // Dark
           } else {
-            document.documentElement.style.backgroundColor = '#f9fafb'; // Tailwind gray-50 (Light)
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.backgroundColor = '#F8F9FA'; // Light
           }
         } catch (e) {
           console.error("Theme script error:", e);
         }
       })();
     </script>
+    <!-- ✅ FIXED SCRIPT END -->
   </head>
   <body>
     <div id="root"></div>
