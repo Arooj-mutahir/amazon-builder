@@ -1,11 +1,12 @@
 // src/App.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { LayoutDashboard, Package, RefreshCw, BarChart2, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, Settings as SettingsIcon, Plus } from 'lucide-react';
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
 import ManualSync from './components/ManualSync';
+import ImportModal from './components/ImportModal'; 
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); 
@@ -15,6 +16,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   const [stores, setStores] = useState([]);
   const [selectedStore, setSelectedStore] = useState('');
   const [selectedStoreId, setSelectedStoreId] = useState(null);
@@ -80,9 +83,9 @@ export default function App() {
     fetchCollections();
   }, [selectedStore, API_URL]);
 
-  const handlePushToShopify = async () => {
-    if (!url) return setError('Please enter an Amazon URL');
-    if (!selectedStore) return setError('Please connect a Shopify store first');
+  const handleModalImport = async (importUrl) => {
+    if (!importUrl) return alert("Please enter a valid URL");
+    if (!selectedStore) return alert("Please connect a Shopify store first");
     
     setLoading(true);
     setError('');
@@ -90,7 +93,7 @@ export default function App() {
 
     try {
       const res = await axios.post(`${API_URL}/app/add-product`, { 
-        amazon_url: url,
+        amazon_url: importUrl,
         shop_domain: selectedStore,
         markup: parseFloat(markup),
         markup_type: markupType,
@@ -100,15 +103,10 @@ export default function App() {
         collection_ids: selectedCollections
       });
 
-      setSuccessMsg(`✅ ${res.data.message} (ASIN: ${res.data.asin}). Check backend terminal.`);
-      setUrl(''); 
-      setSelectedCollections([]);
+      setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
+      setIsModalOpen(false);
     } catch (err) {
-      if (err.response?.status === 409) {
-        setError(`⚠️ ${err.response.data.detail}`);
-      } else {
-        setError(err.response?.data?.detail || 'Failed to connect to backend.');
-      }
+      alert(err.response?.data?.detail || 'Failed to connect to backend.');
     } finally {
       setLoading(false);
     }
@@ -176,14 +174,26 @@ export default function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
-          <div className="flex items-center gap-2">
+        <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
+          <div className="flex flex-col">
             <h2 className="text-xl font-bold capitalize">{activeTab.replace('-', ' ')}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Overview of your Amazon catalog imports, pricing rules, and real-time sync health.</p>
           </div>
+          
           <div className="flex items-center gap-3">
-             <div className="bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-               {selectedStore ? selectedStore.split('.')[0] : 'Store'}
-             </div>
+             <button 
+               onClick={() => setActiveTab('manual-sync')}
+               className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
+             >
+               View Sync Logs
+             </button>
+             
+             <button 
+               onClick={() => setIsModalOpen(true)}
+               className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+             >
+               <Plus size={16} /> Import Products
+             </button>
           </div>
         </header>
 
@@ -194,7 +204,7 @@ export default function App() {
               API_URL={API_URL}
               selectedStoreId={selectedStoreId}
               url={url} setUrl={setUrl}
-              loading={loading} onSubmit={handlePushToShopify}
+              loading={loading} onSubmit={handleModalImport}
               stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
               collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
               markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
@@ -211,6 +221,18 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* ✅ Global Import Modal */}
+      <ImportModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onImport={handleModalImport}
+        loading={loading}
+        markup={markup}              // ✅ Pass karein
+        markupType={markupType}      // ✅ Pass karein
+        extraPercent={extraPercent}  // ✅ Pass karein
+        taxRate={taxRate}            // ✅ Pass karein
+      />
     </div>
   );
 }
