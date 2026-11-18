@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Plus } from 'lucide-react'; 
+import { Plus, Loader2 } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -12,6 +12,7 @@ const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [tabLoading, setTabLoading] = useState(false); // ✅ NAYA: Page transition loader
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,7 +20,6 @@ export default function App() {
   const [successMsg, setSuccessMsg] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // ✅ Modal reset karne ke liye key
   const [modalKey, setModalKey] = useState(0); 
 
   const [stores, setStores] = useState([]);
@@ -133,7 +133,6 @@ export default function App() {
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
       
-      // ✅ Input clear aur Modal reset
       setUrl(''); 
       setModalKey(prev => prev + 1); 
 
@@ -153,19 +152,32 @@ export default function App() {
     setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
-    setActiveTab('dashboard');
-    window.history.pushState({}, '', '/');
+    
+    // ✅ Fix: Back jaate waqt loader lagayein
+    setTabLoading(true);
+    setTimeout(() => {
+      setActiveTab('dashboard');
+      window.history.pushState({}, '', '/');
+      setTabLoading(false);
+    }, 100);
   }, []);
 
+  // ✅ Fix: Tab change karne ke liye naya handler (Loader ke sath)
   const handleTabChange = useCallback((tab) => {
-    setActiveTab(tab);
-    const pathMap = {
-      dashboard: '/',
-      'manual-sync': '/manual-sync',
-      settings: '/settings'
-    };
-    window.history.pushState({}, '', pathMap[tab] || '/');
-  }, []);
+    if (tab === activeTab) return; // Agar wahi tab hai toh kuch na karein
+
+    setTabLoading(true);
+    setTimeout(() => {
+      setActiveTab(tab);
+      const pathMap = {
+        dashboard: '/',
+        'manual-sync': '/manual-sync',
+        settings: '/settings'
+      };
+      window.history.pushState({}, '', pathMap[tab] || '/');
+      setTabLoading(false);
+    }, 150); // 150ms ka smooth transition
+  }, [activeTab]);
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
@@ -199,32 +211,45 @@ export default function App() {
         </header>
 
         {/* Page Content */}
-        <div className="p-8">
-          {activeTab === 'dashboard' && (
-            <DashboardView
-              API_URL={API_URL}
-              selectedStoreId={selectedStoreId}
-              url={url} setUrl={setUrl}
-              loading={loading} onSubmit={handleModalImport}
-              stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-              collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-              markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-              error={error} successMsg={successMsg}
-              onOpenImportModal={() => setIsModalOpen(true)}
-            />
-          )}
+        <div className="p-8 relative flex-1">
+          
+          {/* ✅ FIX: Agar Tab Loading hai toh spinner dikhayein */}
+          {tabLoading ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#F8F9FA] z-10">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-[#008060]" />
+                <p className="text-sm text-gray-500 font-medium">Loading page...</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {activeTab === 'dashboard' && (
+                <DashboardView
+                  API_URL={API_URL}
+                  selectedStoreId={selectedStoreId}
+                  url={url} setUrl={setUrl}
+                  loading={loading} onSubmit={handleModalImport}
+                  stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
+                  collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
+                  markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+                  error={error} successMsg={successMsg}
+                  onOpenImportModal={() => setIsModalOpen(true)}
+                />
+              )}
 
-          {activeTab === 'manual-sync' && (
-            <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
-          )}
+              {activeTab === 'manual-sync' && (
+                <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
+              )}
 
-          {activeTab === 'settings' && (
-            <Settings 
-              onBack={handleBackFromSettings} 
-              storeId={selectedStoreId} 
-              API_URL={API_URL}
-              shopDomain={selectedStore} // ✅ YEH NAYA PROP PASS KIYA GAYA HAI
-            />
+              {activeTab === 'settings' && (
+                <Settings 
+                  onBack={handleBackFromSettings} 
+                  storeId={selectedStoreId} 
+                  API_URL={API_URL}
+                  shopDomain={selectedStore} 
+                />
+              )}
+            </>
           )}
         </div>
       </main>
