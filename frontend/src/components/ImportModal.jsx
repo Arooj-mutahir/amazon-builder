@@ -1,6 +1,7 @@
 // src/components/ImportModal.jsx
 import { useState } from 'react';
 import { X, Plus } from 'lucide-react';
+import CollectionSelector from './CollectionSelector'; // ✅ Import kiya
 
 export default function ImportModal({ 
   isOpen, 
@@ -11,7 +12,10 @@ export default function ImportModal({
   markupType,
   extraPercent,
   taxRate,
-  // ✅ Naye props receive karein App.jsx se
+  // ✅ Collections ke props receive karein
+  collections = [],
+  selectedCollections = [],
+  setSelectedCollections,
   isAutoSyncEnabled,
   onToggleAutoSync
 }) {
@@ -22,24 +26,26 @@ export default function ImportModal({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (url.trim()) {
-      // onImport mein url aur autoSync dono pass karein
       onImport(url, isAutoSyncEnabled);
     }
   };
 
-  // Display string for pricing rule
+  // Collection toggle function
+  const handleCollectionToggle = (id) => {
+    if (selectedCollections.includes(id)) {
+      setSelectedCollections(selectedCollections.filter(cId => cId !== id));
+    } else {
+      setSelectedCollections([...selectedCollections, id]);
+    }
+  };
+
   const getPricingRuleText = () => {
     let text = "";
-    if (markupType === 'percent') {
-      text = `+${markup}% Markup`;
-    } else if (markupType === 'fixed') {
-      text = `+$${markup} Fixed Markup`;
-    } else if (markupType === 'both') {
-      text = `+$${markup} Fixed & +${extraPercent}% Extra`;
-    }
-    if (taxRate > 0) {
-      text += ` | +${taxRate}% Tax`;
-    }
+    if (markupType === 'percent') text = `+${markup}% Markup`;
+    else if (markupType === 'fixed') text = `+$${markup} Fixed`;
+    else if (markupType === 'both') text = `+$${markup} Fixed & +${extraPercent}% Extra`;
+    
+    if (taxRate > 0) text += ` | +${taxRate}% Tax`;
     return text || "No markup applied";
   };
 
@@ -61,25 +67,23 @@ export default function ImportModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-5">
+        <form onSubmit={handleSubmit} className="p-5 space-y-5 max-h-[80vh] overflow-y-auto">
           
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Amazon Product URL or ASIN(s)
             </label>
             <textarea
-              rows="3"
+              rows="2"
               placeholder="e.g. https://www.amazon.com/dp/B0BSHF7WHW or B0BSHF7WHW"
               className="w-full p-3 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             ></textarea>
-            <div className="mt-2">
-              <p className="text-xs text-gray-500">Supports single URLs or comma-separated ASINs.</p>
-            </div>
+            <p className="text-xs text-gray-500 mt-1">Supports single URLs or comma-separated ASINs.</p>
           </div>
 
-          {/* ✅ Auto-Sync Toggle (Synced with App.jsx state) */}
+          {/* Auto-Sync Toggle */}
           <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 flex justify-between items-center">
             <div>
               <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
@@ -97,7 +101,17 @@ export default function ImportModal({
             </div>
           </div>
 
-          {/* Applied Pricing Rule */}
+          {/* ✅ NEW: Collections Selector */}
+          <div className="border border-gray-200 rounded-lg p-4">
+            <CollectionSelector 
+              collections={collections}
+              selectedCollections={selectedCollections}
+              onToggle={handleCollectionToggle}
+              loading={loading}
+            />
+          </div>
+
+          {/* Pricing Rule Info */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex justify-between items-center text-sm">
             <span className="text-gray-600">Applied Pricing Rule:</span>
             <span className="font-semibold text-gray-900">{getPricingRuleText()}</span>
