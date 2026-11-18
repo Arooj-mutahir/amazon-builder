@@ -1,7 +1,6 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Box, CheckCircle2, AlertTriangle, Activity } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
 
@@ -11,32 +10,31 @@ export default function DashboardView({
   API_URL,
   selectedStoreId
 }) {
-  const [statsData, setStatsData] = useState({
-    total_products: 0,
-    active_products: 0,
-    out_of_stock: 0,
-    recent_products: []
-  });
-  const [fetchingStats, setFetchingStats] = useState(true);
+  // Recent products ke liye state
+  const [recentProducts, setRecentProducts] = useState([]);
+  const [fetchingRecent, setFetchingRecent] = useState(true);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchRecentProducts = async () => {
       if (!selectedStoreId) {
-        setFetchingStats(true);
+        setFetchingRecent(false);
         return;
       }
       
-      setFetchingStats(true);
+      setFetchingRecent(true);
       try {
+        // Humne yahan dashboard-stats ki jagah direct data fetch kiya hai (ya aap apna endpoint use kar sakte hain)
         const res = await axios.get(`${API_URL}/dashboard-stats?store_id=${selectedStoreId}`);
-        setStatsData(res.data);
+        if (res.data && res.data.recent_products) {
+          setRecentProducts(res.data.recent_products);
+        }
       } catch (err) {
-        console.error("Failed to fetch dashboard stats", err);
+        console.error("Failed to fetch recent products", err);
       } finally {
-        setFetchingStats(false);
+        setFetchingRecent(false);
       }
     };
-    fetchStats();
+    fetchRecentProducts();
   }, [API_URL, selectedStoreId]);
 
   const handleCollectionToggle = (id) => {
@@ -47,67 +45,16 @@ export default function DashboardView({
     }
   };
 
-  const stats = [
-    { 
-      title: 'Total Products', 
-      value: fetchingStats ? '...' : statsData.total_products.toLocaleString(), 
-      sub: 'All time', 
-      subColor: 'text-gray-600 bg-gray-100', 
-      desc: 'Linked to Shopify catalog', 
-      icon: <Box className="text-gray-400" size={20} /> 
-    },
-    { 
-      title: 'Active Products', 
-      value: fetchingStats ? '...' : statsData.active_products.toLocaleString(), 
-      sub: 'Published', 
-      subColor: 'text-green-600 bg-green-50', 
-      desc: 'Live on your store', 
-      icon: <CheckCircle2 className="text-green-500" size={20} /> 
-    },
-    { 
-      title: 'Out of Stock', 
-      value: fetchingStats ? '...' : statsData.out_of_stock.toLocaleString(), 
-      sub: 'Auto-zeroed', 
-      subColor: 'text-orange-600 bg-orange-50', 
-      desc: 'Protected from overselling', 
-      icon: <AlertTriangle className="text-orange-400" size={20} /> 
-    },
-    { 
-      title: 'Sync Health', 
-      value: '100%', 
-      sub: 'Healthy', 
-      subColor: 'text-green-700 bg-green-100', 
-      desc: 'Auto-sync running', 
-      icon: <Activity className="text-green-500" size={20} /> 
-    },
-  ];
-
   return (
     <div className="space-y-6">
       
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="text-sm text-gray-500 mt-1">Overview of your Amazon catalog imports, pricing rules, and real-time sync health.</p>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => (
-          <div key={i} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-sm font-medium text-gray-500">{stat.title}</span>
-              {stat.icon}
-            </div>
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-2xl font-bold text-gray-900">{stat.value}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${stat.subColor}`}>{stat.sub}</span>
-            </div>
-            <p className="text-xs text-gray-400">{stat.desc}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Main Grid */}
+      {/* Main Grid (Bina Stats Cards ke) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Active Pricing & Collections */}
@@ -141,12 +88,12 @@ export default function DashboardView({
           </div>
 
           <div className="space-y-4">
-            {fetchingStats ? (
+            {fetchingRecent ? (
               <p className="text-sm text-gray-400">Loading...</p>
-            ) : statsData.recent_products.length === 0 ? (
+            ) : recentProducts.length === 0 ? (
               <p className="text-sm text-gray-400">No recent products.</p>
             ) : (
-              statsData.recent_products.map((p) => (
+              recentProducts.map((p) => (
                 <div key={p.id} className="flex items-start justify-between py-3 border-b border-gray-50 last:border-0">
                   <div className="overflow-hidden">
                     <p className="font-medium text-gray-900 text-sm truncate">{p.title}</p>
