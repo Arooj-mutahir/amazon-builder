@@ -19,7 +19,7 @@ export default function App() {
   const [successMsg, setSuccessMsg] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // ✅ NAYA STATE: Modal reset karne ke liye key
+  // ✅ Modal reset karne ke liye key
   const [modalKey, setModalKey] = useState(0); 
 
   const [stores, setStores] = useState([]);
@@ -133,9 +133,9 @@ export default function App() {
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
       
-      // ✅ CHANGES YAHAN HAIN: Input clear aur Modal reset
+      // ✅ Input clear aur Modal reset
       setUrl(''); 
-      setModalKey(prev => prev + 1); // Key change hui, modal reset ho jayega
+      setModalKey(prev => prev + 1); 
 
       setIsModalOpen(false);
     } catch (err) {
@@ -210,6 +210,7 @@ export default function App() {
               collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
               markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
               error={error} successMsg={successMsg}
+              onOpenImportModal={() => setIsModalOpen(true)}
             />
           )}
 
@@ -218,13 +219,17 @@ export default function App() {
           )}
 
           {activeTab === 'settings' && (
-            <Settings onBack={handleBackFromSettings} storeId={selectedStoreId} />
+            <Settings 
+              onBack={handleBackFromSettings} 
+              storeId={selectedStoreId} 
+              API_URL={API_URL}
+              shopDomain={selectedStore} // ✅ YEH NAYA PROP PASS KIYA GAYA HAI
+            />
           )}
         </div>
       </main>
 
       {/* Global Import Modal */}
-      {/* ✅ Yahan modalKey pass ki hai, jisse modal clear ho jayega */}
       <ImportModal
         key={modalKey} 
         isOpen={isModalOpen}
