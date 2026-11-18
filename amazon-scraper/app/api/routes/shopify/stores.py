@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import ShopifyStore
+from app.models import ShopifyStore, Product
 
 router = APIRouter()
 
@@ -17,11 +17,6 @@ async def get_store_by_shop(
     shop: str = Query(..., description="Shopify shop domain, e.g. my-store.myshopify.com"),
     db: Session = Depends(get_db),
 ):
-    """
-    Returns store info (including cached location_id) for the given shop domain.
-    If location_id is missing, fetches it live from Shopify and caches it.
-    Frontend calls this on load with ?shop= from the URL to confirm the store is connected.
-    """
     store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
     if not store:
         raise HTTPException(
@@ -29,7 +24,6 @@ async def get_store_by_shop(
             detail=f"Store '{shop}' is not connected. Please install the app first."
         )
 
-    # ✅ Auto-populate location_id if missing (for stores connected before this feature)
     if not store.shopify_location_id:
         try:
             from app.services.shopify.locations import get_primary_location
@@ -52,3 +46,54 @@ async def get_store_by_shop(
         "default_stock_qty": store.default_stock_qty or 0,
         "connected": True,
     }
+
+
+# ============================================
+# ✅ NAYA: Dashboard Stats Endpoint
+# ============================================
+@router.get("/dashboard-stats")
+def get_dashboard_stats(
+    store_id: int = Query(None, description="Filter by store ID"),
+    db: Session = Depends(get_db)
+):
+    try:
+        # Base query
+        query = db.query(Product)
+
+        # Store filter
+        if store_id:
+            query = query.filter(Product.shopify_store_id == store_id)
+
+        # Counts
+        total_products = query.count()
+        active_products = query.filter(Product.shopify_product_id.isnot(None)).count()
+        out_of_stock = query.filter(Product.is_available == False).count()
+
+        # Recent 5 products
+        recent_products = query.order_by(Product.id.desc()).limit(5).all()
+
+        recent_data = []
+        for p in recent_products:
+            recent_data.append({
+                "id": p.id,
+                "title": p.title or "Untitled",
+                "asin": p.asin or "",
+                "price": float(p.price) if p.price else 0.0,
+                "is_available": bool(p.is_available),
+            })
+
+        return {
+            "total_products": total_products,
+            "active_products": active_products,
+            "out_of_stock": out_of_stock,
+            "recent_products": recent_data
+        }
+
+    except Exception as e:
+        print(f"❌ Error fetching dashboard stats: {e}", flush=True)
+        return {
+            "total_products": 0,
+            "active_products": 0,
+            "out_of_stock": 0,
+            "recent_products": []
+        }
