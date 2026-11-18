@@ -4,17 +4,16 @@ import axios from 'axios';
 import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
-import Loader from './Loader';
 
 export default function DashboardView({ 
   collections, selectedCollections, setSelectedCollections,
   markup, markupType, extraPercent, taxRate,
   API_URL,
   selectedStoreId,
-  onOpenImportModal 
+  onOpenImportModal,
+  onReady,       // ✅ App.jsx se global loader hatane ka callback
 }) {
   const [products, setProducts] = useState([]);
-  // ✅ FIX: Initial state true rakhein taake pehle loader hi dikhe
   const [loading, setLoading] = useState(true); 
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,10 +23,10 @@ export default function DashboardView({
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
         setLoading(false);
+        onReady?.(); // ✅ Store nahi hai toh bhi global loader hatao
         return;
       }
       
-      // Data fetch hote waqt loader true rakhein
       setLoading(true);
       setError('');
       
@@ -40,8 +39,8 @@ export default function DashboardView({
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
-        // Data aane ke baad loader false karein
-        setLoading(false); 
+        setLoading(false);
+        onReady?.(); // ✅ Fetch complete — global loader hatao
       }
     };
     fetchAllProducts();
@@ -70,10 +69,8 @@ export default function DashboardView({
     return matchesSearch;
   });
 
-  // ✅ Loader dikhayein jab data fetch ho raha ho
-  if (loading) {
-    return <Loader message="Loading dashboard products..." />;
-  }
+  // ✅ Global loader handle kar raha hai — local loading check hata diya
+  // (onReady callback se App.jsx ka global loader control hota hai)
 
   return (
     <div className="space-y-6">

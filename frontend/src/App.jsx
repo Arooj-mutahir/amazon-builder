@@ -1,7 +1,8 @@
 // src/App.jsx
-import { useState, useEffect, useCallback, Component } from 'react';
+import { useState, useEffect, useCallback, useRef, Component } from 'react';
 import axios from 'axios';
-import { Plus, AlertTriangle } from 'lucide-react'; 
+import { Plus, AlertTriangle } from 'lucide-react';
+import Loader from './components/Loader';
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -39,8 +40,14 @@ class ErrorBoundary extends Component {
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  // ✅ GLOBAL PAGE LOADING STATE — tab change hote hi true hota hai
+  const [isPageLoading, setIsPageLoading] = useState(true);
+  // ✅ Tab transition key — component ko force remount karne ke liye
+  const [tabKey, setTabKey] = useState(0);
+
   // ✅ NAYA STATE: Auto-Sync status (Dono components ke liye common)
-  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(true);
+  // null = abhi fetch nahi hua (spinner dikhao), true/false = fetched
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -137,6 +144,7 @@ export default function App() {
         setIsAutoSyncEnabled(res.data.enabled);
       } catch (err) {
         console.error("Failed to fetch auto-sync status", err);
+        setIsAutoSyncEnabled(false); // fallback: null se false kar do
       }
     };
     fetchAutoSyncStatus();
@@ -144,6 +152,7 @@ export default function App() {
 
   // ✅ TOGGLE FUNCTION
   const handleToggleAutoSync = useCallback(async () => {
+    if (isAutoSyncEnabled === null) return; // abhi fetch nahi hua
     const newState = !isAutoSyncEnabled;
     setIsAutoSyncEnabled(newState);
 
@@ -206,13 +215,17 @@ export default function App() {
     setTaxRate(localStorage.getItem('global_tax_rate') || '0');
     setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
     
+    setIsPageLoading(true);
+    setTabKey(k => k + 1);
     setActiveTab('dashboard');
     window.history.pushState({}, '', '/');
   }, []);
 
   const handleTabChange = useCallback((tab) => {
     if (tab === activeTab) return;
-    
+    // ✅ Tab change hote hi TURANT global loader on karo
+    setIsPageLoading(true);
+    setTabKey(k => k + 1); // force remount — purana content bilkul nahi dikhega
     setActiveTab(tab);
     const pathMap = {
       dashboard: '/',
@@ -252,39 +265,53 @@ export default function App() {
         </header>
 
         <div className="p-8 relative flex-1">
-          <ErrorBoundary>
-            {activeTab === 'dashboard' && (
-              <DashboardView
-                API_URL={API_URL}
-                selectedStoreId={selectedStoreId}
-                url={url} setUrl={setUrl}
-                loading={loading} onSubmit={handleModalImport}
-                stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-                collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-                markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-                error={error} successMsg={successMsg}
-                onOpenImportModal={() => setIsModalOpen(true)}
-              />
-            )}
+          {/* ✅ GLOBAL PAGE LOADER — tab change hote hi turant dikhta hai */}
+          {isPageLoading && (
+            <Loader message="Loading page..." />
+          )}
 
-            {activeTab === 'manual-sync' && (
-              <ManualSync 
-                API_URL={API_URL} 
-                selectedStoreId={selectedStoreId} 
-                isAutoSyncEnabled={isAutoSyncEnabled} 
-                onToggleAutoSync={handleToggleAutoSync} 
-              />
-            )}
+          {/* ✅ Content sirf tab dikhao jab loading khatam ho */}
+          <div style={{ display: isPageLoading ? 'none' : 'block' }}>
+            <ErrorBoundary>
+              {activeTab === 'dashboard' && (
+                <DashboardView
+                  key={tabKey}
+                  API_URL={API_URL}
+                  selectedStoreId={selectedStoreId}
+                  url={url} setUrl={setUrl}
+                  loading={loading} onSubmit={handleModalImport}
+                  stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
+                  collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
+                  markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+                  error={error} successMsg={successMsg}
+                  onOpenImportModal={() => setIsModalOpen(true)}
+                  onReady={() => setIsPageLoading(false)}
+                />
+              )}
 
-            {activeTab === 'settings' && (
-              <Settings 
-                onBack={handleBackFromSettings} 
-                storeId={selectedStoreId} 
-                API_URL={API_URL}
-                shopDomain={selectedStore} 
-              />
-            )}
-          </ErrorBoundary>
+              {activeTab === 'manual-sync' && (
+                <ManualSync
+                  key={tabKey}
+                  API_URL={API_URL}
+                  selectedStoreId={selectedStoreId}
+                  isAutoSyncEnabled={isAutoSyncEnabled}
+                  onToggleAutoSync={handleToggleAutoSync}
+                  onReady={() => setIsPageLoading(false)}
+                />
+              )}
+
+              {activeTab === 'settings' && (
+                <Settings
+                  key={tabKey}
+                  onBack={handleBackFromSettings}
+                  storeId={selectedStoreId}
+                  API_URL={API_URL}
+                  shopDomain={selectedStore}
+                  onReady={() => setIsPageLoading(false)}
+                />
+              )}
+            </ErrorBoundary>
+          </div>
         </div>
       </main>
 

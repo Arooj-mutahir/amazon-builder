@@ -7,7 +7,7 @@ import Loader from './Loader';
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
 // ✅ shopDomain prop receive karein backend fetch ke liye
-export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDomain }) {
+export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDomain, onReady }) {
   const API_URL = propApiUrl || import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
   const [markup, setMarkup] = useState('0');
@@ -16,13 +16,14 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
   const [taxRate, setTaxRate] = useState('0');
   const [comparePriceMarkup, setComparePriceMarkup] = useState('0');
   const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true); // ✅ Loader State
+  const [loading, setLoading] = useState(true);
 
   // ✅ 1. Page load hone par Database se settings fetch karein
   useEffect(() => {
     const fetchSettings = async () => {
       if (!shopDomain) {
         setLoading(false);
+        onReady?.(); // ✅ No shop? Turant ready
         return;
       }
       
@@ -46,6 +47,7 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
         setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
       } finally {
         setLoading(false);
+        onReady?.(); // ✅ Fetch complete — global loader hatao
       }
     };
     
@@ -93,10 +95,9 @@ export default function Settings({ onBack, storeId, API_URL: propApiUrl, shopDom
     }
   };
 
-  // ✅ 3. Loader show karein jab tak data fetch ho raha hai
-  if (loading) {
-    return <Loader message="Loading pricing settings..." />;
-  }
+  // ✅ 3. Global loader handle kar raha hai — local loader hata diya
+  // (onReady callback se App.jsx ka isPageLoading false hota hai)
+  if (loading) return null;
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-8">
