@@ -4,7 +4,7 @@ import axios from 'axios';
 import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package } from 'lucide-react';
 import PricingSummary from './PricingSummary';
 import CollectionSelector from './CollectionSelector';
-import Loader from './Loader'; // ✅ Loader Import kiya
+import Loader from './Loader';
 
 export default function DashboardView({ 
   collections, selectedCollections, setSelectedCollections,
@@ -14,7 +14,8 @@ export default function DashboardView({
   onOpenImportModal 
 }) {
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // ✅ FIX: Initial state true rakhein taake pehle loader hi dikhe
+  const [loading, setLoading] = useState(true); 
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -25,8 +26,11 @@ export default function DashboardView({
         setLoading(false);
         return;
       }
+      
+      // Data fetch hote waqt loader true rakhein
       setLoading(true);
       setError('');
+      
       try {
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
         if (Array.isArray(res.data)) setProducts(res.data);
@@ -36,7 +40,8 @@ export default function DashboardView({
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
-        setLoading(false);
+        // Data aane ke baad loader false karein
+        setLoading(false); 
       }
     };
     fetchAllProducts();
@@ -65,7 +70,7 @@ export default function DashboardView({
     return matchesSearch;
   });
 
-  // ✅ FIX: Agar data load ho raha hai toh pura page loader dikhayein
+  // ✅ Loader dikhayein jab data fetch ho raha ho
   if (loading) {
     return <Loader message="Loading dashboard products..." />;
   }
