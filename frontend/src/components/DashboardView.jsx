@@ -2,10 +2,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
-// ❌ PricingSummary aur CollectionSelector ki import hata di gayi hai
 
 export default function DashboardView({ 
-  // ❌ collections, markup wagera ki zaroorat nahi hai ab
   API_URL,
   selectedStoreId,
   onOpenImportModal 
@@ -17,28 +15,45 @@ export default function DashboardView({
   const [activeFilter, setActiveFilter] = useState('All');
 
   useEffect(() => {
+    // ✅ 3 second ka safety timeout (taake loader infinite na ghoome)
+    const timeoutId = setTimeout(() => {
+      setLoading(false);
+      if (!selectedStoreId) {
+        setError("Store ID is missing. Could not fetch products.");
+      }
+    }, 3000);
+
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
-        setLoading(false);
-        return;
+        return; // Timeout handle karega
       }
+      
       setLoading(true);
       setError('');
+      
       try {
+        console.log(`📦 Fetching products for store: ${selectedStoreId}`);
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
+        console.log("✅ Products API Response:", res.data);
+        
         if (Array.isArray(res.data)) setProducts(res.data);
         else if (res.data && res.data.products) setProducts(res.data.products);
         else setProducts([]);
       } catch (err) {
-        console.error("Failed to fetch all products:", err);
-        setError("Products fetch karne mein error aaya. Backend server check karein.");
+        console.error("❌ Failed to fetch all products:", err);
+        setError(`Products fetch failed: ${err.message}`);
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
       }
     };
+    
     fetchAllProducts();
+
+    return () => clearTimeout(timeoutId);
   }, [API_URL, selectedStoreId]);
 
+  // Baaki code (Filter, Table, etc.) same rahega
   const filteredProducts = products.filter(p => {
     const title = p.title || '';
     const asin = p.asin || '';
@@ -55,9 +70,7 @@ export default function DashboardView({
   });
 
   return (
-    // ✅ Sirf All Products section bacha hai, Current Settings hata diya gaya hai
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      
       <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">All Products</h2>
@@ -75,7 +88,6 @@ export default function DashboardView({
         )}
       </div>
 
-      {/* Filters & Search */}
       <div className="p-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4 bg-gray-50/50">
         <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
           {['All', 'Active', 'Out of Stock', 'Draft'].map(filter => (

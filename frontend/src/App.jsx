@@ -19,7 +19,6 @@ export default function App() {
   const [successMsg, setSuccessMsg] = useState('');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  // ✅ Modal reset karne ke liye key
   const [modalKey, setModalKey] = useState(0); 
 
   const [stores, setStores] = useState([]);
@@ -40,55 +39,54 @@ export default function App() {
   // URL-based initial tab detection
   useEffect(() => {
     const path = window.location.pathname;
-    if (path.includes('settings')) {
-      setActiveTab('settings');
-    } else if (path.includes('manual-sync')) {
-      setActiveTab('manual-sync');
-    } else {
-      setActiveTab('dashboard');
-    }
+    if (path.includes('settings')) setActiveTab('settings');
+    else if (path.includes('manual-sync')) setActiveTab('manual-sync');
+    else setActiveTab('dashboard');
   }, []);
 
   // Fetch stores on mount
   useEffect(() => {
     const fetchStores = async () => {
       try {
+        console.log("🔍 Fetching stores from:", `${API_URL}/stores`);
         const res = await axios.get(`${API_URL}/stores`);
+        console.log("✅ Stores API Response:", res.data);
         setStores(res.data);
 
-        if (res.data.length > 0) {
+        if (res.data && res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
-
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
-
+          
+          console.log("🎯 Selected Store:", foundStore);
           setSelectedStore(foundStore.shop_domain);
-          setSelectedStoreId(foundStore.id);
+          setSelectedStoreId(foundStore.id); // ✅ ID set ho rahi hai
+        } else {
+          console.warn("⚠️ Stores API returned empty array");
         }
       } catch (err) {
-        console.error("Failed to fetch stores", err);
+        console.error("❌ Failed to fetch stores:", err);
       }
     };
     fetchStores();
   }, [API_URL]);
 
-  // Keep selectedStoreId in sync whenever selectedStore changes
+  // Keep selectedStoreId in sync
   useEffect(() => {
     if (!selectedStore || stores.length === 0) return;
     const store = stores.find(s => s.shop_domain === selectedStore);
     if (store && store.id !== selectedStoreId) {
+      console.log("🔄 Syncing Store ID:", store.id);
       setSelectedStoreId(store.id);
     }
   }, [selectedStore, stores, selectedStoreId]);
 
-  // Fetch collections when store changes; reset selected collections
+  // Fetch collections
   useEffect(() => {
     let cancelled = false;
-
     const fetchCollections = async () => {
       setSelectedCollections([]);
       setCollections([]);
-
       if (!selectedStore) return;
 
       try {
@@ -100,12 +98,17 @@ export default function App() {
         console.error("Failed to fetch collections", err);
       }
     };
-
     fetchCollections();
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
 
+  // ✅ Debugging: Jab bhi selectedStoreId change ho, console mein dikhao
+  useEffect(() => {
+    console.log("📌 Current selectedStoreId:", selectedStoreId);
+  }, [selectedStoreId]);
+
   const handleModalImport = useCallback(async (importUrl) => {
+    // ... same code
     if (!importUrl) {
       setError("Please enter a valid URL");
       return;
@@ -132,11 +135,8 @@ export default function App() {
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
-      
-      // ✅ Input clear aur Modal reset
       setUrl(''); 
       setModalKey(prev => prev + 1); 
-
       setIsModalOpen(false);
     } catch (err) {
       const msg = err.response?.data?.detail || 'Failed to connect to backend.';
@@ -169,10 +169,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
-
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col overflow-y-auto">
-        {/* Top Header */}
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex flex-col">
             <h2 className="text-xl font-bold capitalize">{activeTab.replace('-', ' ')}</h2>
@@ -198,18 +195,11 @@ export default function App() {
           </div>
         </header>
 
-        {/* Page Content */}
         <div className="p-8">
           {activeTab === 'dashboard' && (
             <DashboardView
               API_URL={API_URL}
               selectedStoreId={selectedStoreId}
-              url={url} setUrl={setUrl}
-              loading={loading} onSubmit={handleModalImport}
-              stores={stores} selectedStore={selectedStore} setSelectedStore={setSelectedStore}
-              collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-              markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-              error={error} successMsg={successMsg}
               onOpenImportModal={() => setIsModalOpen(true)}
             />
           )}
@@ -223,13 +213,12 @@ export default function App() {
               onBack={handleBackFromSettings} 
               storeId={selectedStoreId} 
               API_URL={API_URL}
-              shopDomain={selectedStore} // ✅ YEH NAYA PROP PASS KIYA GAYA HAI
+              shopDomain={selectedStore} 
             />
           )}
         </div>
       </main>
 
-      {/* Global Import Modal */}
       <ImportModal
         key={modalKey} 
         isOpen={isModalOpen}
