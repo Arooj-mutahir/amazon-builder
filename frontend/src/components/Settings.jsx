@@ -37,7 +37,6 @@ export default function Settings({ onBack, storeId }) {
         extra_percent: finalExtraPercent,
         tax_rate: parseFloat(taxRate || 0),
         compare_price_markup: parseFloat(comparePriceMarkup || 0),
-        // default_stock_qty aur shopify_location_id optional hain, agar backend require kare toh add kar sakte hain
         default_stock_qty: 100, 
         shopify_location_id: null
       });
@@ -73,10 +72,11 @@ export default function Settings({ onBack, storeId }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl">
+      {/* ✅ Grid Layout (Sab kuch columns mein) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl">
         
-        {/* Markup Strategy */}
-        <div className="md:col-span-2">
+        {/* 1. Markup Strategy */}
+        <div>
           <label className="block text-sm font-bold text-gray-700 mb-2.5">Markup Strategy</label>
           <select
             className="w-full px-5 py-3.5 bg-blue-50/50 border border-blue-100 rounded-xl text-gray-900 font-semibold focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all cursor-pointer"
@@ -95,7 +95,7 @@ export default function Settings({ onBack, storeId }) {
           </select>
         </div>
 
-        {/* Markup Value */}
+        {/* 2. Markup Value */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
             {markupType === 'percent' ? <Percent className="w-4 h-4 text-blue-500" /> : <DollarSign className="w-4 h-4 text-green-500" />}
@@ -109,8 +109,8 @@ export default function Settings({ onBack, storeId }) {
           />
         </div>
 
-        {/* Extra Percent (Only for Both) */}
-        {markupType === 'both' ? (
+        {/* 3. Extra Percent (Only for Both) */}
+        {markupType === 'both' && (
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
               <Percent className="w-4 h-4 text-purple-500" /> Extra Percentage (%)
@@ -122,10 +122,10 @@ export default function Settings({ onBack, storeId }) {
               onChange={(e) => setExtraPercent(e.target.value)}
             />
           </div>
-        ) : <div></div>}
+        )}
 
-        {/* Tax Rate */}
-        <div className="md:col-span-2">
+        {/* 4. Tax Rate */}
+        <div>
           <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
             <Receipt className="w-4 h-4 text-orange-500" /> Tax Rate (%)
           </label>
@@ -135,11 +135,10 @@ export default function Settings({ onBack, storeId }) {
             value={taxRate}
             onChange={(e) => setTaxRate(e.target.value)}
           />
-          <p className="text-xs text-gray-500 mt-2 font-medium">This tax will be added on top of the final calculated price.</p>
         </div>
 
-        {/* Compare at Price */}
-        <div className="md:col-span-2 pt-4 border-t border-gray-100">
+        {/* 5. Compare at Price */}
+        <div>
           <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-pink-500" /> Compare at Price Markup (%)
           </label>
@@ -149,11 +148,14 @@ export default function Settings({ onBack, storeId }) {
             value={comparePriceMarkup}
             onChange={(e) => setComparePriceMarkup(e.target.value)}
           />
-          <p className="text-xs text-gray-500 mt-2 font-medium">
-            This markup will be applied to the final price to calculate the "Compare at Price" for products.
-            Example: Final Price $100 + 20% = Compare Price $120.
-          </p>
         </div>
+      </div>
+
+      {/* Info Text for Extra Percent / Tax / Compare */}
+      <div className="mt-4 max-w-4xl text-xs text-gray-500 space-y-1">
+        {markupType === 'both' && <p>* Extra percentage is applied after fixed amount markup.</p>}
+        <p>* Tax Rate will be added on top of the final calculated price.</p>
+        <p>* Compare at Price is calculated based on the final price (e.g., Final Price $100 + 20% = Compare Price $120).</p>
       </div>
 
       {/* Save Button */}
