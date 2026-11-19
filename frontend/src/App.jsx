@@ -1,214 +1,249 @@
-// src/components/DashboardView.jsx
-import { useState, useEffect } from 'react';
+// src/App.jsx
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Package, Loader2, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react'; 
 
-export default function DashboardView({ 
-  API_URL,
-  selectedStoreId,
-  onOpenImportModal 
-}) {
-  const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+import DashboardView from './components/DashboardView';
+import Settings from './components/Settings';
+import ManualSync from './components/ManualSync';
+import ImportModal from './components/ImportModal';
+
+const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState('All');
+  const [successMsg, setSuccessMsg] = useState('');
 
-  // ✅ Fetch all products (Dynamic)
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalKey, setModalKey] = useState(0); 
+
+  const [stores, setStores] = useState([]);
+  const [selectedStore, setSelectedStore] = useState('');
+  const [selectedStoreId, setSelectedStoreId] = useState(null);
+
+  const [markup, setMarkup] = useState(() => localStorage.getItem('global_markup') || '0');
+  const [markupType, setMarkupType] = useState(() => localStorage.getItem('global_markup_type') || 'percent');
+  const [extraPercent, setExtraPercent] = useState(() => localStorage.getItem('global_extra_percent') || '0');
+  const [taxRate, setTaxRate] = useState(() => localStorage.getItem('global_tax_rate') || '0');
+  const [comparePriceMarkup, setComparePriceMarkup] = useState(() => localStorage.getItem('global_compare_markup') || '0');
+
+  const [collections, setCollections] = useState([]);
+  const [selectedCollections, setSelectedCollections] = useState([]);
+
+  const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
+
+  // URL-based initial tab detection
   useEffect(() => {
-    const fetchAllProducts = async () => {
-      if (!selectedStoreId) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError('');
+    const path = window.location.pathname;
+    if (path.includes('settings')) setActiveTab('settings');
+    else if (path.includes('manual-sync')) setActiveTab('manual-sync');
+    else setActiveTab('dashboard');
+  }, []);
+
+  // Fetch stores on mount
+  useEffect(() => {
+    const fetchStores = async () => {
       try {
-        const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
-        if (Array.isArray(res.data)) setProducts(res.data);
-        else if (res.data && res.data.products) setProducts(res.data.products);
-        else setProducts([]);
+        console.log("🔍 Fetching stores from:", `${API_URL}/stores`);
+        const res = await axios.get(`${API_URL}/stores`);
+        console.log("✅ Stores API Response:", res.data);
+        setStores(res.data);
+
+        if (res.data && res.data.length > 0) {
+          const urlParams = new URLSearchParams(window.location.search);
+          const shopFromUrl = urlParams.get('shop');
+          const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
+          
+          console.log("🎯 Selected Store:", foundStore);
+          setSelectedStore(foundStore.shop_domain);
+          setSelectedStoreId(foundStore.id); // ✅ ID set ho rahi hai
+        } else {
+          console.warn("⚠️ Stores API returned empty array");
+        }
       } catch (err) {
-        console.error("Failed to fetch all products:", err);
-        setError("Products fetch karne mein error aaya. Backend server check karein.");
-      } finally {
-        setLoading(false);
+        console.error("❌ Failed to fetch stores:", err);
       }
     };
-    fetchAllProducts();
-  }, [API_URL, selectedStoreId]);
+    fetchStores();
+  }, [API_URL]);
 
-  // Search aur Filter logic
-  const filteredProducts = products.filter(p => {
-    const title = p.title || '';
-    const asin = p.asin || '';
-    const statusText = p.is_available ? 'Active' : (p.status || 'Out of Stock');
-    
-    const matchesSearch = title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          asin.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeFilter === 'All') return matchesSearch;
-    if (activeFilter === 'Active') return matchesSearch && statusText === 'Active';
-    if (activeFilter === 'Out of Stock') return matchesSearch && statusText === 'Out of Stock';
-    if (activeFilter === 'Draft') return matchesSearch && statusText === 'Draft';
-    return matchesSearch;
-  });
+  // Keep selectedStoreId in sync
+  useEffect(() => {
+    if (!selectedStore || stores.length === 0) return;
+    const store = stores.find(s => s.shop_domain === selectedStore);
+    if (store && store.id !== selectedStoreId) {
+      console.log("🔄 Syncing Store ID:", store.id);
+      setSelectedStoreId(store.id);
+    }
+  }, [selectedStore, stores, selectedStoreId]);
+
+  // Fetch collections
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCollections = async () => {
+      setSelectedCollections([]);
+      setCollections([]);
+      if (!selectedStore) return;
+
+      try {
+        const res = await axios.get(`${API_URL}/collections?shop=${selectedStore}`);
+        if (!cancelled && res.data.collections) {
+          setCollections(res.data.collections);
+        }
+      } catch (err) {
+        console.error("Failed to fetch collections", err);
+      }
+    };
+    fetchCollections();
+    return () => { cancelled = true; };
+  }, [selectedStore, API_URL]);
+
+  // ✅ Debugging: Jab bhi selectedStoreId change ho, console mein dikhao
+  useEffect(() => {
+    console.log("📌 Current selectedStoreId:", selectedStoreId);
+  }, [selectedStoreId]);
+
+  const handleModalImport = useCallback(async (importUrl) => {
+    // ... same code
+    if (!importUrl) {
+      setError("Please enter a valid URL");
+      return;
+    }
+    if (!selectedStore) {
+      setError("Please connect a Shopify store first");
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setSuccessMsg('');
+
+    try {
+      const res = await axios.post(`${API_URL}/app/add-product`, {
+        amazon_url: importUrl,
+        shop_domain: selectedStore,
+        markup: parseFloat(markup),
+        markup_type: markupType,
+        extra_percent: parseFloat(extraPercent),
+        tax_rate: parseFloat(taxRate),
+        compare_price_markup: parseFloat(comparePriceMarkup),
+        collection_ids: selectedCollections
+      });
+
+      setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
+      setUrl(''); 
+      setModalKey(prev => prev + 1); 
+      setIsModalOpen(false);
+    } catch (err) {
+      const msg = err.response?.data?.detail || 'Failed to connect to backend.';
+      setError(msg);
+      alert(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [API_URL, selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections]);
+
+  const handleBackFromSettings = useCallback(() => {
+    setMarkup(localStorage.getItem('global_markup') || '0');
+    setMarkupType(localStorage.getItem('global_markup_type') || 'percent');
+    setExtraPercent(localStorage.getItem('global_extra_percent') || '0');
+    setTaxRate(localStorage.getItem('global_tax_rate') || '0');
+    setComparePriceMarkup(localStorage.getItem('global_compare_markup') || '0');
+    setActiveTab('dashboard');
+    window.history.pushState({}, '', '/');
+  }, []);
+
+  const handleTabChange = useCallback((tab) => {
+    setActiveTab(tab);
+    const pathMap = {
+      dashboard: '/',
+      'manual-sync': '/manual-sync',
+      settings: '/settings'
+    };
+    window.history.pushState({}, '', pathMap[tab] || '/');
+  }, []);
 
   return (
-    <div className="space-y-6">
-      
-      {/* Products Table Section */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        
-        <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">All Products</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Showing {products.length} products from the database.
+    <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
+      <main className="flex-1 flex flex-col overflow-y-auto">
+        <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
+          <div className="flex flex-col">
+            <h2 className="text-xl font-bold capitalize">{activeTab.replace('-', ' ')}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Overview of your Amazon catalog imports, pricing rules, and real-time sync health.
             </p>
           </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => handleTabChange('manual-sync')}
+              className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              View Sync Logs
+            </button>
+
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+            >
+              <Plus size={16} /> Import Products
+            </button>
+          </div>
+        </header>
+
+        <div className="p-8">
           
-          <button 
-            onClick={onOpenImportModal}
-            className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
-          >
-            <Plus size={16} /> Import Product
-          </button>
-        </div>
 
-        {/* Filters & Search */}
-        <div className="p-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4 bg-gray-50/50">
-          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
-            {['All', 'Active', 'Out of Stock', 'Draft'].map(filter => (
-              <button
-                key={filter}
-                onClick={() => setActiveFilter(filter)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  activeFilter === filter 
-                    ? 'bg-gray-200/80 text-gray-900' 
-                    : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
+{activeTab === 'dashboard' && (
+  <DashboardView
+    API_URL={API_URL}
+    selectedStoreId={selectedStoreId}
+    collections={collections} 
+    selectedCollections={selectedCollections} 
+    setSelectedCollections={setSelectedCollections}
+    markup={markup} 
+    markupType={markupType} 
+    extraPercent={extraPercent} 
+    taxRate={taxRate}
+    onOpenImportModal={() => setIsModalOpen(true)}
+  />
+)}
 
-          <div className="relative w-full md:w-72">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search by title or ASIN..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          {activeTab === 'manual-sync' && (
+            <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
+          )}
+
+          {activeTab === 'settings' && (
+            <Settings 
+              onBack={handleBackFromSettings} 
+              storeId={selectedStoreId} 
+              API_URL={API_URL}
+              shopDomain={selectedStore} 
             />
-          </div>
+          )}
         </div>
+      </main>
 
-        {error && (
-          <div className="p-4 bg-red-50 text-red-600 text-sm border-b border-red-100">
-            {error}
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                <th className="p-4 w-12 text-center"><input type="checkbox" className="rounded border-gray-300" /></th>
-                <th className="p-4 font-semibold">Product</th>
-                <th className="p-4 font-semibold">ASIN</th>
-                <th className="p-4 font-semibold">Amazon Price</th>
-                <th className="p-4 font-semibold">Shopify Price</th>
-                <th className="p-4 font-semibold">Stock</th>
-                <th className="p-4 font-semibold">Status</th>
-                <th className="p-4 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                <tr>
-                  <td colSpan="8" className="p-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
-                      <Loader2 className="animate-spin text-green-600 mb-3" size={32} />
-                      <p className="text-base font-medium">Fetching products...</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : filteredProducts.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="p-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-gray-500 w-full">
-                      <Package size={40} className="text-gray-300 mb-3" />
-                      <p className="text-base font-medium">No products found.</p>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                filteredProducts.map((product) => {
-                  const title = product.title || 'Unknown Product';
-                  const asin = product.asin || 'N/A';
-                  const amazonPrice = product.amazon_price || '0.00';
-                  const shopifyPrice = product.price || '0.00';
-                  const stock = product.stock_quantity !== undefined ? product.stock_quantity : (product.is_available ? 10 : 0);
-                  const isActive = product.is_available !== undefined ? product.is_available : (product.status === 'Active');
-                  const statusText = isActive ? 'Active' : (stock === 0 ? 'Out of Stock' : 'Draft');
-
-                  return (
-                    <tr key={product.id || product.asin} className="hover:bg-gray-50/50 transition-colors group">
-                      <td className="p-4 text-center"><input type="checkbox" className="rounded border-gray-300" /></td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
-                            {product.image_url ? (
-                              <img src={product.image_url} alt="" className="w-full h-full object-cover rounded-lg" />
-                            ) : (
-                              <Package size={20} className="text-gray-400" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate" title={title}>{title}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Auto-Sync ON</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4"><span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200 font-mono">{asin}</span></td>
-                      <td className="p-4 text-sm text-gray-600">${amazonPrice}</td>
-                      <td className="p-4 text-sm font-semibold text-gray-900">${shopifyPrice}</td>
-                      <td className="p-4 text-sm">
-                        <span className={stock === 0 ? 'text-red-500 font-medium' : 'text-gray-700'}>{stock} in stock</span>
-                      </td>
-                      <td className="p-4">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold
-                          ${statusText === 'Active' ? 'bg-green-100 text-green-700' : 
-                            statusText === 'Out of Stock' ? 'bg-red-100 text-red-700' : 
-                            'bg-blue-100 text-blue-700'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${statusText === 'Active' ? 'bg-green-500' : statusText === 'Out of Stock' ? 'bg-red-500' : 'bg-blue-500'}`}></span>
-                          {statusText}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="Sync Product">
-                            <RefreshCw size={16} />
-                          </button>
-                          <button className="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded border border-transparent hover:border-gray-200 transition-all" title="View on Shopify">
-                            <ExternalLink size={16} />
-                          </button>
-                          <button className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200 transition-all" title="Delete">
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ImportModal
+        key={modalKey} 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onImport={handleModalImport}
+        loading={loading}
+        error={error}
+        markup={markup}
+        markupType={markupType}
+        extraPercent={extraPercent}
+        taxRate={taxRate}
+        comparePriceMarkup={comparePriceMarkup}
+        collections={collections}
+        selectedCollections={selectedCollections}
+        setSelectedCollections={setSelectedCollections}
+      />
     </div>
   );
 }
