@@ -1,7 +1,7 @@
 // src/App.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { Plus } from 'lucide-react'; 
+import { Plus, AlertTriangle } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -10,8 +10,37 @@ import ImportModal from './components/ImportModal';
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
+// ✅ Error Boundary
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8 flex flex-col items-center justify-center text-center h-full">
+          <AlertTriangle size={48} className="text-red-500 mb-4" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Kuch Gadbad Ho Gayi!</h2>
+          <p className="text-gray-500 mb-4">Page load karte waqt error aa gaya. Kripya page refresh karein.</p>
+          <button onClick={() => window.location.reload()} className="bg-gray-900 text-white px-4 py-2 rounded-lg">
+            Refresh Page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // ✅ Naya State: Auto-Sync
+  const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
 
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,24 +77,18 @@ export default function App() {
   useEffect(() => {
     const fetchStores = async () => {
       try {
-        console.log("🔍 Fetching stores from:", `${API_URL}/stores`);
         const res = await axios.get(`${API_URL}/stores`);
-        console.log("✅ Stores API Response:", res.data);
         setStores(res.data);
 
-        if (res.data && res.data.length > 0) {
+        if (res.data.length > 0) {
           const urlParams = new URLSearchParams(window.location.search);
           const shopFromUrl = urlParams.get('shop');
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
-          
-          console.log("🎯 Selected Store:", foundStore);
           setSelectedStore(foundStore.shop_domain);
-          setSelectedStoreId(foundStore.id); // ✅ ID set ho rahi hai
-        } else {
-          console.warn("⚠️ Stores API returned empty array");
+          setSelectedStoreId(foundStore.id);
         }
       } catch (err) {
-        console.error("❌ Failed to fetch stores:", err);
+        console.error("Failed to fetch stores", err);
       }
     };
     fetchStores();
@@ -76,7 +99,6 @@ export default function App() {
     if (!selectedStore || stores.length === 0) return;
     const store = stores.find(s => s.shop_domain === selectedStore);
     if (store && store.id !== selectedStoreId) {
-      console.log("🔄 Syncing Store ID:", store.id);
       setSelectedStoreId(store.id);
     }
   }, [selectedStore, stores, selectedStoreId]);
@@ -102,13 +124,39 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
 
-  // ✅ Debugging: Jab bhi selectedStoreId change ho, console mein dikhao
+  // ✅ Fetch Auto-Sync Status
   useEffect(() => {
-    console.log("📌 Current selectedStoreId:", selectedStoreId);
-  }, [selectedStoreId]);
+    const fetchAutoSyncStatus = async () => {
+      if (!selectedStoreId) return;
+      try {
+        const res = await axios.get(`${API_URL}/auto-sync/status?store_id=${selectedStoreId}`);
+        setIsAutoSyncEnabled(res.data.enabled);
+      } catch (err) {
+        console.error("Failed to fetch auto-sync status", err);
+        setIsAutoSyncEnabled(false);
+      }
+    };
+    fetchAutoSyncStatus();
+  }, [API_URL, selectedStoreId]);
+
+  // ✅ Toggle Function
+  const handleToggleAutoSync = useCallback(async () => {
+    if (isAutoSyncEnabled === null) return;
+    const newState = !isAutoSyncEnabled;
+    setIsAutoSyncEnabled(newState);
+
+    try {
+      await axios.post(`${API_URL}/auto-sync/toggle?store_id=${selectedStoreId}`, {
+        enabled: newState
+      });
+    } catch (err) {
+      console.error("Failed to update auto-sync", err);
+      setIsAutoSyncEnabled(!newState);
+      alert("Failed to update Auto-Sync setting.");
+    }
+  }, [isAutoSyncEnabled, API_URL, selectedStoreId]);
 
   const handleModalImport = useCallback(async (importUrl) => {
-    // ... same code
     if (!importUrl) {
       setError("Please enter a valid URL");
       return;
@@ -131,7 +179,8 @@ export default function App() {
         extra_percent: parseFloat(extraPercent),
         tax_rate: parseFloat(taxRate),
         compare_price_markup: parseFloat(comparePriceMarkup),
-        collection_ids: selectedCollections
+        collection_ids: selectedCollections,
+        auto_sync: isAutoSyncEnabled
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
@@ -145,7 +194,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [API_URL, selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections]);
+  }, [API_URL, selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections, isAutoSyncEnabled]);
 
   const handleBackFromSettings = useCallback(() => {
     setMarkup(localStorage.getItem('global_markup') || '0');
@@ -196,25 +245,38 @@ export default function App() {
         </header>
 
         <div className="p-8">
-          
-
-{activeTab === 'dashboard' && (
-  <DashboardView
-    API_URL={API_URL}
-    selectedStoreId={selectedStoreId}
-    collections={collections} 
-    selectedCollections={selectedCollections} 
-    setSelectedCollections={setSelectedCollections}
-    markup={markup} 
-    markupType={markupType} 
-    extraPercent={extraPercent} 
-    taxRate={taxRate}
-    onOpenImportModal={() => setIsModalOpen(true)}
-  />
-)}
+          {activeTab === 'dashboard' && (
+            <DashboardView
+              // ✅ Form props (Ab kaam karenge)
+              url={url}
+              setUrl={setUrl}
+              loading={loading}
+              onSubmit={handleModalImport}
+              isAutoSyncEnabled={isAutoSyncEnabled}
+              onToggleAutoSync={handleToggleAutoSync}
+              
+              // ✅ Design props
+              collections={collections}
+              selectedCollections={selectedCollections}
+              setSelectedCollections={setSelectedCollections}
+              markup={markup}
+              markupType={markupType}
+              extraPercent={extraPercent}
+              taxRate={taxRate}
+              
+              // ✅ Data props
+              API_URL={API_URL}
+              selectedStoreId={selectedStoreId}
+            />
+          )}
 
           {activeTab === 'manual-sync' && (
-            <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} />
+            <ManualSync 
+              API_URL={API_URL} 
+              selectedStoreId={selectedStoreId}
+              isAutoSyncEnabled={isAutoSyncEnabled}
+              onToggleAutoSync={handleToggleAutoSync}
+            />
           )}
 
           {activeTab === 'settings' && (
@@ -222,7 +284,7 @@ export default function App() {
               onBack={handleBackFromSettings} 
               storeId={selectedStoreId} 
               API_URL={API_URL}
-              shopDomain={selectedStore} 
+              shopDomain={selectedStore}
             />
           )}
         </div>
@@ -243,6 +305,8 @@ export default function App() {
         collections={collections}
         selectedCollections={selectedCollections}
         setSelectedCollections={setSelectedCollections}
+        isAutoSyncEnabled={isAutoSyncEnabled}
+        onToggleAutoSync={handleToggleAutoSync}
       />
     </div>
   );
