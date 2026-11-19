@@ -1,12 +1,9 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
-import CollectionSelector from './CollectionSelector';
+import { Search, RefreshCw, ExternalLink, Trash2, Package, Loader2 } from 'lucide-react';
 
 export default function DashboardView({ 
-  collections, selectedCollections, setSelectedCollections,
-  markup, markupType, extraPercent, taxRate,
   API_URL,
   selectedStoreId,
   onOpenImportModal 
@@ -17,17 +14,7 @@ export default function DashboardView({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
 
-  // ✅ Dynamic Pricing Rule Text
-  const getPricingRuleText = () => {
-    let text = "";
-    if (markupType === 'percent') text = `+${markup}% Markup`;
-    else if (markupType === 'fixed') text = `+$${markup} Fixed`;
-    else if (markupType === 'both') text = `+$${markup} Fixed & +${extraPercent}% Extra`;
-    
-    if (taxRate > 0) text += ` | +${taxRate}% Tax`;
-    return text || "No markup applied";
-  };
-
+  // ✅ Fetch all products
   useEffect(() => {
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
@@ -37,6 +24,7 @@ export default function DashboardView({
       setLoading(true);
       setError('');
       try {
+        // Hum yahan /dashboard-stats ki jagah /products call kar rahe hain
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
         if (Array.isArray(res.data)) setProducts(res.data);
         else if (res.data && res.data.products) setProducts(res.data.products);
@@ -50,14 +38,6 @@ export default function DashboardView({
     };
     fetchAllProducts();
   }, [API_URL, selectedStoreId]);
-
-  const handleCollectionToggle = (id) => {
-    if (selectedCollections.includes(id)) {
-      setSelectedCollections(selectedCollections.filter(cId => cId !== id));
-    } else {
-      setSelectedCollections([...selectedCollections, id]);
-    }
-  };
 
   const filteredProducts = products.filter(p => {
     const title = p.title || '';
@@ -77,63 +57,7 @@ export default function DashboardView({
   return (
     <div className="space-y-6">
       
-      {/* ✅ 1. INLINE IMPORT FORM (Center mein) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
-        <div className="space-y-5">
-          
-          {/* URL Section */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Amazon Product URL or ASIN(s)
-            </label>
-            <div className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-400">
-              e.g. https://www.amazon.com/dp/B0BSHF7WHW or B0BSHF7WHW
-            </div>
-            <p className="text-xs text-gray-500 mt-1">Supports single URLs or comma-separated ASINs.</p>
-          </div>
-
-          {/* Collections Section */}
-          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
-            <CollectionSelector 
-              collections={collections}
-              selectedCollections={selectedCollections}
-              onToggle={handleCollectionToggle}
-              loading={false}
-              isModal={true}
-            />
-          </div>
-
-          {/* Auto-Sync Section */}
-          <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 flex justify-between items-center">
-            <div>
-              <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
-              <p className="text-xs text-gray-500">Price & stock tracking</p>
-            </div>
-            <div className="w-10 h-5 rounded-full bg-gray-300 relative cursor-not-allowed">
-              <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full"></div>
-            </div>
-          </div>
-
-          {/* Pricing Rule Section */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex justify-between items-center text-sm">
-            <span className="text-gray-600">Applied Pricing Rule:</span>
-            <span className="font-semibold text-gray-900">{getPricingRuleText()}</span>
-          </div>
-
-          {/* Import Button */}
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-            <button 
-              onClick={onOpenImportModal}
-              className="px-5 py-2.5 text-sm font-medium bg-[#008060] hover:bg-[#006e52] text-white rounded-lg flex items-center gap-2"
-            >
-              <Plus size={16} /> Import Product
-            </button>
-          </div>
-
-        </div>
-      </div>
-
-      {/* ✅ 2. PRODUCTS TABLE SECTION */}
+      {/* Products Table Section */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -143,6 +67,14 @@ export default function DashboardView({
               Showing {products.length} products from the database.
             </p>
           </div>
+          
+          {/* Import Button (Optional: Agar aap Dashboard mein bhi chahti hain) */}
+          <button 
+            onClick={onOpenImportModal}
+            className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Plus size={16} /> Import Product
+          </button>
         </div>
 
         {/* Filters & Search */}
@@ -219,8 +151,8 @@ export default function DashboardView({
                   const title = product.title || 'Unknown Product';
                   const asin = product.asin || 'N/A';
                   const amazonPrice = product.amazon_price || '0.00';
-                  const shopifyPrice = product.shopify_price || '0.00';
-                  const stock = product.stock !== undefined ? product.stock : (product.is_available ? 10 : 0);
+                  const shopifyPrice = product.price || '0.00'; // Backend mein 'price' hai
+                  const stock = product.stock_quantity !== undefined ? product.stock_quantity : (product.is_available ? 10 : 0);
                   const isActive = product.is_available !== undefined ? product.is_available : (product.status === 'Active');
                   const statusText = isActive ? 'Active' : (stock === 0 ? 'Out of Stock' : 'Draft');
 
@@ -230,15 +162,15 @@ export default function DashboardView({
                       <td className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center shrink-0 border border-gray-200">
-                            {product.image ? (
-                              <img src={product.image} alt="" className="w-full h-full object-cover rounded-lg" />
+                            {product.image_url ? (
+                              <img src={product.image_url} alt="" className="w-full h-full object-cover rounded-lg" />
                             ) : (
                               <Package size={20} className="text-gray-400" />
                             )}
                           </div>
                           <div>
                             <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate" title={title}>{title}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Auto-Sync {product.auto_sync !== false ? 'ON' : 'OFF'}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Auto-Sync ON</p>
                           </div>
                         </div>
                       </td>
