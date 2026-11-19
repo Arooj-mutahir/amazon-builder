@@ -34,7 +34,7 @@ async def process_multi_variant(
     print(f"🔗 Custom Handle set: {final_handle}", flush=True)
 
     # ==========================================
-    # ✅ NAYA: Selected variant ko sabse pehle rakhein (Default banane ke liye)
+    # ✅ Selected variant ko sabse pehle rakhein
     # ==========================================
     main_asin = main_data.get("asin")
     main_title = (main_data.get("title") or "").lower()
@@ -46,7 +46,6 @@ async def process_multi_variant(
         v_asin = v.get("asin")
         v_title = (v.get("title") or "").lower()
         
-        # ✅ ASIN ya Title se match karein
         if (v_asin == main_asin) or (v_title and v_title in main_title):
             selected_variant = v
         else:
@@ -59,10 +58,10 @@ async def process_multi_variant(
         print(f"⚠️ Selected variant (ASIN: {main_asin}) not found in clean_variants", flush=True)
         print(f"   Available ASINs: {[v.get('asin') for v in clean_variants]}", flush=True)
 
-    # ✅ Shopify par product create karein
+    # ✅ Shopify par product create karein (Sirf pehla variant bhejein taake wahi default bane)
     result = await create_shopify_product_with_variants(
         shop=shop_domain, access_token=await _get_valid_access_token(store, db),
-        product_data=shopify_payload, variants_raw=clean_variants,
+        product_data=shopify_payload, variants_raw=[clean_variants[0]], # ✅ Sirf pehla variant
         markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
     )
 
@@ -82,14 +81,63 @@ async def process_multi_variant(
 
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
-    # ✅ Default Variant ka Title update karein
+    # ==========================================
+    # ✅ Baaki variants ko bulk create karein (agar hain toh)
+    # ==========================================
+    if len(clean_variants) > 1:
+        try:
+            token = await _get_valid_access_token(store, db)
+            remaining = clean_variants[1:]
+            
+            # Yahan aapko productVariantsBulkCreate call karna hoga
+            # (Yeh function aapke create_shopify_product_with_variants mein hona chahiye,
+            #  ya aap alag se bana sakte hain)
+            print(f"📦 Adding {len(remaining)} more variants...", flush=True)
+            
+            bulk_create_mutation = """
+            mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                productVariants { id title }
+                userErrors { field message }
+              }
+            }
+            """
+            
+            variants_payload = []
+            for v in remaining:
+                v_title = v.get("title") or "Variant"
+                v_price = calculate_final_price(
+                    v.get("price") or main_data.get("price", 0.0),
+                    user_markup, user_markup_type, user_extra, user_tax
+                )
+                variants_payload.append({
+                    "title": v_title[:255],
+                    "price": str(v_price),
+                    "sku": v.get("asin", ""),
+                })
+            
+            bulk_res = await shopify_graphql(shop_domain, token, bulk_create_mutation, {
+                "productId": shopify_id,
+                "variants": variants_payload
+            })
+            errs = (bulk_res.get("data", {}).get("productVariantsBulkCreate") or {}).get("userErrors") or []
+            if errs:
+                print(f"⚠️ Bulk variant create errors: {errs}", flush=True)
+            else:
+                print(f"✅ Added {len(remaining)} additional variants!", flush=True)
+        except Exception as e:
+            print(f"⚠️ Bulk variant create failed: {e}", flush=True)
+
+    # ==========================================
+    # ✅ Default Variant ka Title update karein (Selected Variant ke title se)
+    # ==========================================
     try:
         token = await _get_valid_access_token(store, db)
         get_variants_query = """
         query getProductVariants($id: ID!) {
           product(id: $id) {
             variants(first: 1) {
-              nodes { id }
+              nodes { id title }
             }
           }
         }
@@ -99,6 +147,12 @@ async def process_multi_variant(
         
         if default_variant_nodes:
             default_variant_id = default_variant_nodes[0]["id"]
+            
+            # ✅ YAHAN CHANGE: Product Title ki jagah Selected Variant ka Title set karein
+            if selected_variant:
+                selected_variant_title = selected_variant.get("title", "Default")
+            else:
+                selected_variant_title = main_data.get("title", "Default")[:50]
             
             update_mutation = """
             mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
@@ -112,14 +166,14 @@ async def process_multi_variant(
                 "productId": shopify_id,
                 "variants": [{
                     "id": default_variant_id,
-                    "title": main_data.get("title", "")[:255]
+                    "title": selected_variant_title[:255]  # ✅ Selected Variant Title
                 }]
             })
             errs = (update_res.get("data", {}).get("productVariantsBulkUpdate") or {}).get("userErrors") or []
             if errs:
                 print(f"⚠️ Default variant title update failed: {errs}", flush=True)
             else:
-                print(f"✅ Default variant title updated to: {main_data.get('title')[:50]}...", flush=True)
+                print(f"✅ Default variant title updated to: {selected_variant_title[:50]}...", flush=True)
     except Exception as e:
         print(f"⚠️ Default variant title update error: {e}", flush=True)
 
