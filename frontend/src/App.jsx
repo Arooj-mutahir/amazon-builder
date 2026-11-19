@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { Plus, AlertTriangle } from 'lucide-react'; 
+import { AlertTriangle } from 'lucide-react'; // ✅ Plus icon ki zaroorat nahi hai ab
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -38,10 +38,8 @@ class ErrorBoundary extends Component {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-
-  // ✅ Naya State: Auto-Sync
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
-
+  
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -124,7 +122,7 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedStore, API_URL]);
 
-  // ✅ Fetch Auto-Sync Status
+  // Fetch auto-sync status
   useEffect(() => {
     const fetchAutoSyncStatus = async () => {
       if (!selectedStoreId) return;
@@ -139,7 +137,6 @@ export default function App() {
     fetchAutoSyncStatus();
   }, [API_URL, selectedStoreId]);
 
-  // ✅ Toggle Function
   const handleToggleAutoSync = useCallback(async () => {
     if (isAutoSyncEnabled === null) return;
     const newState = !isAutoSyncEnabled;
@@ -227,6 +224,7 @@ export default function App() {
             </p>
           </div>
 
+          {/* ✅ Sirf "View Sync Logs" button bacha hai. "Import Products" hata diya gaya hai */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => handleTabChange('manual-sync')}
@@ -234,28 +232,18 @@ export default function App() {
             >
               View Sync Logs
             </button>
-
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="bg-[#008060] hover:bg-[#006e52] text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm"
-            >
-              <Plus size={16} /> Import Products
-            </button>
           </div>
         </header>
 
         <div className="p-8">
           {activeTab === 'dashboard' && (
             <DashboardView
-              // ✅ Form props (Ab kaam karenge)
               url={url}
               setUrl={setUrl}
               loading={loading}
               onSubmit={handleModalImport}
               isAutoSyncEnabled={isAutoSyncEnabled}
               onToggleAutoSync={handleToggleAutoSync}
-              
-              // ✅ Design props
               collections={collections}
               selectedCollections={selectedCollections}
               setSelectedCollections={setSelectedCollections}
@@ -263,8 +251,6 @@ export default function App() {
               markupType={markupType}
               extraPercent={extraPercent}
               taxRate={taxRate}
-              
-              // ✅ Data props
               API_URL={API_URL}
               selectedStoreId={selectedStoreId}
             />
