@@ -6,7 +6,6 @@ from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product, publish_product, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
-from app.worker.title_cleaner import get_clean_product_title
 
 async def process_single_variant(
     store, main_data, user_markup, user_markup_type, user_extra, user_tax, 
@@ -77,22 +76,10 @@ async def process_single_variant(
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ==========================================
-    # ✅ Clean Product Title (Without Color/Variant Name)
-    # ==========================================
-    # Original title preserve rakhein debugging ke liye
-    shopify_payload["original_title"] = main_data.get("title") or ""
-
-    # Priority order se title nikaalein (titleExcludingVariantName -> parent ASIN title -> color fallback)
-    clean_product_title = get_clean_product_title(main_data, [])
-    shopify_payload["shopify_title"] = clean_product_title
-    shopify_payload["title"] = clean_product_title
-    print(f"🏷️ Final Clean Product Title (No Color): {clean_product_title}", flush=True)
-
     # ✅ NAYA: Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
-    # 1. Clean Title se handle banayein
+       # ✅ 1. Title se clean handle banayein (Aapka Logic)
     FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
-    product_title = clean_product_title or "amazon-product"
+    product_title = main_data.get("title") or "amazon-product"
     clean_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
     clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars hatao
     all_words = clean_title.split()
