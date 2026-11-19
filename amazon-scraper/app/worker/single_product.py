@@ -76,12 +76,15 @@ async def process_single_variant(
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ NAYA: Chota URL Handle — sirf pehle 4 words
+    # ✅ NAYA: Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
+    FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
     product_title = main_data.get("title") or "amazon-product"
     clean_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
     clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars (brackets, commas, etc.) hatao
-    words = clean_title.split()[:4]                               # Sirf pehle 4 words
-    final_handle = "-".join(words).lower() if words else "product"
+    all_words = clean_title.split()
+    meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
+    selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
+    final_handle = "-".join(selected_words) if selected_words else "product"
     
     shopify_payload["handle"] = final_handle
     print(f"🔗 Custom Handle set: {final_handle}", flush=True)
