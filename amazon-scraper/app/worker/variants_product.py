@@ -22,17 +22,27 @@ async def process_multi_variant(
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
     # ✅ Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
+        # ✅ 1. Title se clean handle banayein (Aapka Logic)
     FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
     product_title = main_data.get("title") or "amazon-product"
     clean_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
-    clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars (brackets, commas, etc.) hatao
+    clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars hatao
     all_words = clean_title.split()
     meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
     selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
-    final_handle = "-".join(selected_words) if selected_words else "product"
-    
+    base_handle = "-".join(selected_words) if selected_words else "product"
+
+    # ✅ 2. Duplicate Handle Check (Shopify par conflict se bachne ke liye)
+    existing_products = db.query(Product).filter(Product.shopify_handle.like(f"{base_handle}%")).all()
+    if existing_products:
+        suffix = len(existing_products) + 1
+        final_handle = f"{base_handle}-{suffix}"
+    else:
+        final_handle = base_handle
+
+    # ✅ 3. Final Handle set karein
     shopify_payload["handle"] = final_handle
-    print(f"🔗 Custom Handle set: {final_handle}", flush=True)
+    print(f"🔗 Final Clean Handle: {final_handle}", flush=True)
 
     # ==========================================
     # ✅ NAYA: Selected variant ko sabse pehle rakhein (Default banane ke liye)
