@@ -37,18 +37,27 @@ async def process_multi_variant(
     # ✅ NAYA: Selected variant ko sabse pehle rakhein (Default banane ke liye)
     # ==========================================
     main_asin = main_data.get("asin")
+    main_title = (main_data.get("title") or "").lower()
+    
     selected_variant = None
     other_variants = []
     
     for v in clean_variants:
-        if v.get("asin") == main_asin:
+        v_asin = v.get("asin")
+        v_title = (v.get("title") or "").lower()
+        
+        # ✅ ASIN ya Title se match karein
+        if (v_asin == main_asin) or (v_title and v_title in main_title):
             selected_variant = v
         else:
             other_variants.append(v)
     
     if selected_variant:
         clean_variants = [selected_variant] + other_variants
-        print(f"🔄 Reordered variants: {main_asin} is now the default variant", flush=True)
+        print(f"🔄 Reordered variants: {selected_variant.get('title')} is now the default variant", flush=True)
+    else:
+        print(f"⚠️ Selected variant (ASIN: {main_asin}) not found in clean_variants", flush=True)
+        print(f"   Available ASINs: {[v.get('asin') for v in clean_variants]}", flush=True)
 
     # ✅ Shopify par product create karein
     result = await create_shopify_product_with_variants(
