@@ -1,5 +1,6 @@
 # app/worker/single_product.py
 import traceback
+import re  # ✅ NAYA: Regex ke liye
 from app.database import SessionLocal
 from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product, publish_product, set_product_metafields_smart
@@ -74,6 +75,18 @@ async def process_single_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
+
+    # ✅ NAYA: Chota URL Handle banayein
+    product_title = main_data.get("title") or "amazon-product"
+    clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', product_title)
+    short_handle = re.sub(r'\s+', '-', clean_title.strip()).lower()
+    if len(short_handle) > 60:
+        short_handle = short_handle[:60].rsplit('-', 1)[0]
+    
+    asin = main_data.get("asin") or "0000"
+    final_handle = f"{short_handle}-{asin.lower()}"
+    shopify_payload["handle"] = final_handle
+    print(f"🔗 Custom Handle set: {final_handle}", flush=True)
 
     # ✅ Create product
     result = await create_shopify_product(

@@ -59,6 +59,7 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
 
         input_data = {
             'title': product_data.get('title', 'Untitled')[:255],
+             'handle': product_data.get('handle'),
             'descriptionHtml': enhanced_description,
             'vendor': product_data.get('brand', ''),
             'productType': product_data.get('product_type') or (amazon_categories[-1] if amazon_categories else "General"),
