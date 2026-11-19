@@ -4,7 +4,7 @@ from app.models import Product
 from app.services.shopify import create_shopify_product_with_variants, publish_product, add_product_to_collections, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
-from app.services.shopify.client import shopify_graphql  # ✅ NAYA: GraphQL import
+from app.services.shopify.client import shopify_graphql
 
 async def process_multi_variant(
     store, main_data, clean_variants, user_markup, user_markup_type, 
@@ -21,7 +21,7 @@ async def process_multi_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ NAYA: Chota URL Handle banayein
+    # ✅ Chota URL Handle banayein
     product_title = main_data.get("title") or "amazon-product"
     clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', product_title)
     short_handle = re.sub(r'\s+', '-', clean_title.strip()).lower()
@@ -32,6 +32,23 @@ async def process_multi_variant(
     final_handle = f"{short_handle}-{asin.lower()}"
     shopify_payload["handle"] = final_handle
     print(f"🔗 Custom Handle set: {final_handle}", flush=True)
+
+    # ==========================================
+    # ✅ NAYA: Selected variant ko sabse pehle rakhein (Default banane ke liye)
+    # ==========================================
+    main_asin = main_data.get("asin")
+    selected_variant = None
+    other_variants = []
+    
+    for v in clean_variants:
+        if v.get("asin") == main_asin:
+            selected_variant = v
+        else:
+            other_variants.append(v)
+    
+    if selected_variant:
+        clean_variants = [selected_variant] + other_variants
+        print(f"🔄 Reordered variants: {main_asin} is now the default variant", flush=True)
 
     # ✅ Shopify par product create karein
     result = await create_shopify_product_with_variants(
@@ -56,7 +73,7 @@ async def process_multi_variant(
 
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
-    # ✅ NAYA: Default Variant ka Title update karein
+    # ✅ Default Variant ka Title update karein
     try:
         token = await _get_valid_access_token(store, db)
         get_variants_query = """
@@ -240,7 +257,7 @@ async def process_multi_variant(
         except Exception as e: 
             print(f"⚠️ Collection add failed: {e}", flush=True)
     
-    # ✅ NAYA: Metafields set karein (Size Chart included)
+    # ✅ Metafields set karein (Size Chart included)
     try:
         raw_details = dict(main_data.get("details") or {})
         raw_details["asin"] = main_data.get("asin")
