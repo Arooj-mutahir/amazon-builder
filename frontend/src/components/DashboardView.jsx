@@ -77,9 +77,9 @@ export default function DashboardView({
   return (
     <div className="space-y-6">
       
-      {/* ✅ 1. INLINE IMPORT FORM (Bilkul Modal Jaisa) */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <div className="space-y-5 max-w-3xl">
+      {/* ✅ 1. INLINE IMPORT FORM (Center mein) */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
+        <div className="space-y-5">
           
           {/* URL Section */}
           <div>
@@ -120,7 +120,7 @@ export default function DashboardView({
             <span className="font-semibold text-gray-900">{getPricingRuleText()}</span>
           </div>
 
-          {/* Import Button (jo Modal khol dega) */}
+          {/* Import Button */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button 
               onClick={onOpenImportModal}
