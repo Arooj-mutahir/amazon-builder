@@ -196,7 +196,7 @@ export default function App() {
         </header>
 
         <div className="p-8">
-          // src/App.jsx mein (jahan activeTab === 'dashboard' hai wahan):
+          
 
 {activeTab === 'dashboard' && (
   <DashboardView
