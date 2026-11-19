@@ -202,7 +202,6 @@ export default function App() {
   <DashboardView
     API_URL={API_URL}
     selectedStoreId={selectedStoreId}
-    // ✅ In props ko pass karein taake Design load ho
     collections={collections} 
     selectedCollections={selectedCollections} 
     setSelectedCollections={setSelectedCollections}
@@ -210,7 +209,6 @@ export default function App() {
     markupType={markupType} 
     extraPercent={extraPercent} 
     taxRate={taxRate}
-    
     onOpenImportModal={() => setIsModalOpen(true)}
   />
 )}

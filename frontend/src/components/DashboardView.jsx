@@ -109,7 +109,6 @@ export default function DashboardView({
               <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
               <p className="text-xs text-gray-500">Price & stock tracking</p>
             </div>
-            {/* Static Toggle */}
             <div className="w-10 h-5 rounded-full bg-gray-300 relative cursor-not-allowed">
               <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full"></div>
             </div>
