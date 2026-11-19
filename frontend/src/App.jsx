@@ -200,26 +200,15 @@ export default function App() {
 
 {activeTab === 'dashboard' && (
   <DashboardView
-    // ✅ Form ke liye props
-    url={url}
-    setUrl={setUrl}
-    loading={loading}
-    onSubmit={handleModalImport} 
-    isAutoSyncEnabled={isAutoSyncEnabled}
-    onToggleAutoSync={handleToggleAutoSync}
-    
-    // ✅ Design ke liye props
-    collections={collections}
-    selectedCollections={selectedCollections}
-    setSelectedCollections={setSelectedCollections}
-    markup={markup}
-    markupType={markupType}
-    extraPercent={extraPercent}
-    taxRate={taxRate}
-    
-    // ✅ Data fetching ke props
     API_URL={API_URL}
     selectedStoreId={selectedStoreId}
+    collections={collections} 
+    selectedCollections={selectedCollections} 
+    setSelectedCollections={setSelectedCollections}
+    markup={markup} 
+    markupType={markupType} 
+    extraPercent={extraPercent} 
+    taxRate={taxRate}
     onOpenImportModal={() => setIsModalOpen(true)}
   />
 )}
