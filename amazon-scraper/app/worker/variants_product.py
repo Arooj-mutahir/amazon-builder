@@ -1,9 +1,10 @@
 # app/worker/variants_product.py
-import re  # ✅ NAYA: Regex ke liye
+import re
 from app.models import Product
 from app.services.shopify import create_shopify_product_with_variants, publish_product, add_product_to_collections, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
+from app.services.shopify.client import shopify_graphql  # ✅ NAYA: GraphQL import
 
 async def process_multi_variant(
     store, main_data, clean_variants, user_markup, user_markup_type, 
@@ -54,6 +55,47 @@ async def process_multi_variant(
         return
 
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
+
+    # ✅ NAYA: Default Variant ka Title update karein
+    try:
+        token = await _get_valid_access_token(store, db)
+        get_variants_query = """
+        query getProductVariants($id: ID!) {
+          product(id: $id) {
+            variants(first: 1) {
+              nodes { id }
+            }
+          }
+        }
+        """
+        variant_res = await shopify_graphql(shop_domain, token, get_variants_query, {"id": shopify_id})
+        default_variant_nodes = (variant_res.get("data", {}).get("product", {}).get("variants", {}).get("nodes") or [])
+        
+        if default_variant_nodes:
+            default_variant_id = default_variant_nodes[0]["id"]
+            
+            update_mutation = """
+            mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                productVariants { id title }
+                userErrors { field message }
+              }
+            }
+            """
+            update_res = await shopify_graphql(shop_domain, token, update_mutation, {
+                "productId": shopify_id,
+                "variants": [{
+                    "id": default_variant_id,
+                    "title": main_data.get("title", "")[:255]
+                }]
+            })
+            errs = (update_res.get("data", {}).get("productVariantsBulkUpdate") or {}).get("userErrors") or []
+            if errs:
+                print(f"⚠️ Default variant title update failed: {errs}", flush=True)
+            else:
+                print(f"✅ Default variant title updated to: {main_data.get('title')[:50]}...", flush=True)
+    except Exception as e:
+        print(f"⚠️ Default variant title update error: {e}", flush=True)
 
     # ==========================================
     # ✅ PARENT PRODUCT DATABASE MEIN SAVE KAREIN
@@ -202,7 +244,6 @@ async def process_multi_variant(
     try:
         raw_details = dict(main_data.get("details") or {})
         raw_details["asin"] = main_data.get("asin")
-        # ✅ Size chart ko metafield mein bhejein
         if shopify_payload.get("size_chart"):
             raw_details["size_chart"] = shopify_payload["size_chart"]
             print(f"📏 Size chart added to metafields", flush=True)
