@@ -5,14 +5,18 @@ import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 
 import CollectionSelector from './CollectionSelector';
 
 export default function DashboardView({ 
+  // ✅ App.jsx se aane wale props (Form ke liye)
+  url, setUrl, loading, onSubmit,
   collections, selectedCollections, setSelectedCollections,
   markup, markupType, extraPercent, taxRate,
+  isAutoSyncEnabled, onToggleAutoSync,
+  
+  // ✅ Data fetching ke props
   API_URL,
   selectedStoreId,
-  onOpenImportModal 
 }) {
   const [products, setProducts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [fetchingProducts, setFetchingProducts] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
@@ -31,10 +35,10 @@ export default function DashboardView({
   useEffect(() => {
     const fetchAllProducts = async () => {
       if (!selectedStoreId) {
-        setLoading(false);
+        setFetchingProducts(false);
         return;
       }
-      setLoading(true);
+      setFetchingProducts(true);
       setError('');
       try {
         const res = await axios.get(`${API_URL}/products?store_id=${selectedStoreId}`);
@@ -45,7 +49,7 @@ export default function DashboardView({
         console.error("Failed to fetch all products:", err);
         setError("Products fetch karne mein error aaya. Backend server check karein.");
       } finally {
-        setLoading(false);
+        setFetchingProducts(false);
       }
     };
     fetchAllProducts();
@@ -56,6 +60,14 @@ export default function DashboardView({
       setSelectedCollections(selectedCollections.filter(cId => cId !== id));
     } else {
       setSelectedCollections([...selectedCollections, id]);
+    }
+  };
+
+  // ✅ Import Handler (jo form submit par chalega)
+  const handleDashboardImport = (e) => {
+    e.preventDefault();
+    if (url.trim()) {
+      onSubmit(url);
     }
   };
 
@@ -77,18 +89,23 @@ export default function DashboardView({
   return (
     <div className="space-y-6">
       
-      {/* ✅ 1. INLINE IMPORT FORM (Center mein) */}
+      {/* ✅ 1. INLINE IMPORT FORM (Ab Kaam Karega) */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
-        <div className="space-y-5">
+        <form onSubmit={handleDashboardImport} className="space-y-5">
           
           {/* URL Section */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Amazon Product URL or ASIN(s)
             </label>
-            <div className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-400">
-              e.g. https://www.amazon.com/dp/B0BSHF7WHW or B0BSHF7WHW
-            </div>
+            <textarea
+              rows="2"
+              placeholder="e.g. https://www.amazon.com/dp/B0BSHF7WHW or B0BSHF7WHW"
+              className="w-full p-3 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              disabled={loading}
+            />
             <p className="text-xs text-gray-500 mt-1">Supports single URLs or comma-separated ASINs.</p>
           </div>
 
@@ -98,7 +115,7 @@ export default function DashboardView({
               collections={collections}
               selectedCollections={selectedCollections}
               onToggle={handleCollectionToggle}
-              loading={false}
+              loading={loading}
               isModal={true}
             />
           </div>
@@ -109,9 +126,18 @@ export default function DashboardView({
               <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
               <p className="text-xs text-gray-500">Price & stock tracking</p>
             </div>
-            <div className="w-10 h-5 rounded-full bg-gray-300 relative cursor-not-allowed">
-              <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full"></div>
-            </div>
+            <button 
+              type="button"
+              onClick={onToggleAutoSync}
+              disabled={loading}
+              className={`w-10 h-5 rounded-full relative transition-colors ${
+                isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
+              }`}
+            >
+              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                isAutoSyncEnabled ? 'left-5' : 'left-0.5'
+              }`}></div>
+            </button>
           </div>
 
           {/* Pricing Rule Section */}
@@ -123,17 +149,19 @@ export default function DashboardView({
           {/* Import Button */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button 
-              onClick={onOpenImportModal}
-              className="px-5 py-2.5 text-sm font-medium bg-[#008060] hover:bg-[#006e52] text-white rounded-lg flex items-center gap-2"
+              type="submit"
+              disabled={loading || !url.trim()}
+              className="px-5 py-2.5 text-sm font-medium bg-[#008060] hover:bg-[#006e52] text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
             >
-              <Plus size={16} /> Import Product
+              {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              {loading ? 'Importing...' : 'Import Product'}
             </button>
           </div>
 
-        </div>
+        </form>
       </div>
 
-      {/* ✅ 2. PRODUCTS TABLE SECTION */}
+      {/* ✅ 2. PRODUCTS TABLE SECTION (Same as before) */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -196,7 +224,7 @@ export default function DashboardView({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {loading ? (
+              {fetchingProducts ? (
                 <tr>
                   <td colSpan="8" className="p-12 text-center">
                     <div className="flex flex-col items-center justify-center text-gray-500 w-full">
