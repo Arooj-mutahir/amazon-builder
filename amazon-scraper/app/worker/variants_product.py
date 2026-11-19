@@ -21,15 +21,13 @@ async def process_multi_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ Chota URL Handle banayein
+    # ✅ Chota URL Handle — sirf pehle 4 words
     product_title = main_data.get("title") or "amazon-product"
-    clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', product_title)
-    short_handle = re.sub(r'\s+', '-', clean_title.strip()).lower()
-    if len(short_handle) > 60:
-        short_handle = short_handle[:60].rsplit('-', 1)[0]
+    clean_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
+    clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars (brackets, commas, etc.) hatao
+    words = clean_title.split()[:4]                               # Sirf pehle 4 words
+    final_handle = "-".join(words).lower() if words else "product"
     
-    asin = main_data.get("asin") or "0000"
-    final_handle = f"{short_handle}-{asin.lower()}"
     shopify_payload["handle"] = final_handle
     print(f"🔗 Custom Handle set: {final_handle}", flush=True)
 

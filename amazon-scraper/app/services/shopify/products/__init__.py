@@ -59,7 +59,6 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
 
         input_data = {
             'title': product_data.get('title', 'Untitled')[:255],
-             'handle': product_data.get('handle'),
             'descriptionHtml': enhanced_description,
             'vendor': product_data.get('brand', ''),
             'productType': product_data.get('product_type') or (amazon_categories[-1] if amazon_categories else "General"),
@@ -68,6 +67,9 @@ async def create_shopify_product(shop: str, access_token: str, product_data: dic
             'productOptions': [{'name': 'Title', 'values': [{'name': 'Default'}]}],
         }
         
+        if product_data.get('handle'):
+            input_data['handle'] = product_data.get('handle')
+
         if shopify_category_id: 
             input_data['category'] = shopify_category_id
 
@@ -280,6 +282,9 @@ async def create_shopify_product_with_variants(shop, access_token, product_data,
             'status': initial_status,
             'productOptions': product_options,
         }
+
+        if product_data.get('handle'):
+            input_data['handle'] = product_data.get('handle')
 
         if amazon_categories:
             shopify_category_id = await get_shopify_category_id(shop, access_token, amazon_categories)
