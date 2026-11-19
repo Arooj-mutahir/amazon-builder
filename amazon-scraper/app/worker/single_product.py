@@ -6,6 +6,7 @@ from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product, publish_product, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
+from app.worker.title_cleaner import strip_variant_info_from_title
 
 async def process_single_variant(
     store, main_data, user_markup, user_markup_type, user_extra, user_tax, 
@@ -76,13 +77,25 @@ async def process_single_variant(
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
+    # ==========================================
+    # ✅ Amazon Original Title (Variant/Color Info Hata Kar)
+    # ==========================================
+    # Amazon ka original title hi use karein (kisi doosre source se replace nahi karna)
+    # Sirf us original title ke andar se variant/color/size ki information hatayein
+    raw_amazon_title = main_data.get("title") or "Untitled Product"
+    shopify_payload["original_title"] = raw_amazon_title
+
+    clean_title = strip_variant_info_from_title(raw_amazon_title, [], main_data)
+    shopify_payload["shopify_title"] = clean_title
+    shopify_payload["title"] = clean_title
+    print(f"🏷️ Final Shopify Title (Original without variant): {clean_title}", flush=True)
+
     # ✅ NAYA: Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
-       # ✅ 1. Title se clean handle banayein (Aapka Logic)
     FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
-    product_title = main_data.get("title") or "amazon-product"
-    clean_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
-    clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars hatao
-    all_words = clean_title.split()
+    product_title = clean_title or "amazon-product"
+    clean_handle_title = re.sub(r"['’]", "", product_title)              
+    clean_handle_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_handle_title)     
+    all_words = clean_handle_title.split()
     meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
     selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
     base_handle = "-".join(selected_words) if selected_words else "product"
