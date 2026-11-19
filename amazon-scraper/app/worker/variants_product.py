@@ -5,6 +5,7 @@ from app.services.shopify import create_shopify_product_with_variants, publish_p
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
 from app.services.shopify.client import shopify_graphql
+from app.worker.title_cleaner import get_clean_product_title, reorder_variants_for_default
 
 async def process_multi_variant(
     store, main_data, clean_variants, user_markup, user_markup_type, 
@@ -21,44 +22,46 @@ async def process_multi_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
+    # ==========================================
+    # ✅ 1. Variant Reordering (Shopify Default Variant)
+    # ==========================================
+    # Selected child ASIN (URL wala) match karke index 0 par shift karein
+    clean_variants = reorder_variants_for_default(clean_variants, main_data.get("asin"))
+
+    # ==========================================
+    # ✅ 2. Clean Product Title (Without Color/Variant Name)
+    # ==========================================
+    # Original title preserve rakhein debugging ke liye
+    shopify_payload["original_title"] = main_data.get("title") or ""
+
+    # Priority order se title nikaalein (titleExcludingVariantName -> parent ASIN title -> color fallback)
+    clean_product_title = get_clean_product_title(main_data, clean_variants)
+    shopify_payload["shopify_title"] = clean_product_title
+    shopify_payload["title"] = clean_product_title
+    print(f"🏷️ Final Clean Product Title (No Color): {clean_product_title}", flush=True)
+
     # ✅ Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
+    # 1. Clean Title se handle banayein
     FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
-    product_title = main_data.get("title") or "amazon-product"
+    product_title = clean_product_title or "amazon-product"
     clean_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
-    clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars (brackets, commas, etc.) hatao
+    clean_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_title)     # Special chars hatao
     all_words = clean_title.split()
     meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
     selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
-    final_handle = "-".join(selected_words) if selected_words else "product"
-    
-    shopify_payload["handle"] = final_handle
-    print(f"🔗 Custom Handle set: {final_handle}", flush=True)
+    base_handle = "-".join(selected_words) if selected_words else "product"
 
-    # ==========================================
-    # ✅ NAYA: Selected variant ko sabse pehle rakhein (Default banane ke liye)
-    # ==========================================
-    main_asin = main_data.get("asin")
-    main_title = (main_data.get("title") or "").lower()
-    
-    selected_variant = None
-    other_variants = []
-    
-    for v in clean_variants:
-        v_asin = v.get("asin")
-        v_title = (v.get("title") or "").lower()
-        
-        # ✅ ASIN ya Title se match karein
-        if (v_asin == main_asin) or (v_title and v_title in main_title):
-            selected_variant = v
-        else:
-            other_variants.append(v)
-    
-    if selected_variant:
-        clean_variants = [selected_variant] + other_variants
-        print(f"🔄 Reordered variants: {selected_variant.get('title')} is now the default variant", flush=True)
+    # 2. Duplicate Handle Check (Shopify par conflict se bachne ke liye)
+    existing_products = db.query(Product).filter(Product.shopify_handle.like(f"{base_handle}%")).all()
+    if existing_products:
+        suffix = len(existing_products) + 1
+        final_handle = f"{base_handle}-{suffix}"
     else:
-        print(f"⚠️ Selected variant (ASIN: {main_asin}) not found in clean_variants", flush=True)
-        print(f"   Available ASINs: {[v.get('asin') for v in clean_variants]}", flush=True)
+        final_handle = base_handle
+
+    # 3. Final Handle set karein
+    shopify_payload["handle"] = final_handle
+    print(f"🔗 Final Clean Handle: {final_handle}", flush=True)
 
     # ✅ Shopify par product create karein
     result = await create_shopify_product_with_variants(
