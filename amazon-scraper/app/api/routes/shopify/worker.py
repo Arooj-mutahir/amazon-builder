@@ -45,8 +45,7 @@ async def _background_fetch_and_push(
         print(f"⚙️ [UI FETCH] Markup={user_markup}, Type={user_markup_type}, Extra={user_extra}%, Tax={user_tax}%, Compare={compare_price_markup}%", flush=True)
         default_stock_qty = getattr(store, "default_stock_qty", 0) or 0
 
-        # 🔥 IMPORTANT: Store fields ko local variables mein copy karo
-        # taaki DB session band hone ke baad bhi accessible rahein
+        # Store data local variables mein copy karo
         store_id_local = store.id
         store_domain_local = store.shop_domain
         store_plan = store.plan
@@ -129,7 +128,6 @@ async def _background_fetch_and_push(
     # ============================================================
     db2 = SessionLocal()
     try:
-        # 🔥 Naya session, fresh connection — timeout nahi hoga
         store_fresh = db2.query(ShopifyStore).filter(ShopifyStore.id == store_id_local).first()
         if not store_fresh:
             print("❌ Store disappeared during scraping", flush=True)
@@ -154,12 +152,19 @@ async def _background_fetch_and_push(
                 shopify_payload=shopify_payload, shop_domain=shop_domain, db=db2, default_stock_qty=default_stock_qty,
                 compare_price_markup=compare_price_markup
             )
+        
+        # 🔥 FIX: Data save hone ke baad turant session close karo
+        # Taki jab Shopify API calls chalein, tab DB idle na baithe
+        db2.close()
+
     except Exception as e:
         print(f"\n❌ SAVE CRASHED: {e}", flush=True)
         traceback.print_exc()
         db2.rollback()
     finally:
-        db2.close()
+        # Safe side close
+        if db2.is_active:
+            db2.close()
 
 # Scheduler Setup
 scheduler = AsyncIOScheduler()

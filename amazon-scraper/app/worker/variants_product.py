@@ -60,7 +60,6 @@ async def process_multi_variant(
 
     # ==========================================
     # ✅ 3. SHOPIFY API CALL (Long Process)
-    # Note: Yahan DB connection idle rahega thodi der, par worker.py ne fresh session diya hai isliye safe hai.
     # ==========================================
     token = await _get_valid_access_token(store, db)
     result = await create_shopify_product_with_variants(
@@ -160,7 +159,7 @@ async def process_multi_variant(
             shopify_store_id=store.id, 
             shopify_status="active",
             shopify_product_id=shopify_id,
-            shopify_handle=final_handle, # 🔥 Add kiya
+            shopify_handle=final_handle,
         )
         db.add(new_product)
         print(f"✅ Parent product created in DB", flush=True)
@@ -185,7 +184,7 @@ async def process_multi_variant(
         new_product.tax_rate = user_tax
         new_product.categories = extracted_categories
         new_product.tags = final_tags
-        new_product.shopify_handle = final_handle # 🔥 Add kiya
+        new_product.shopify_handle = final_handle
         print(f"✅ Parent product updated in DB", flush=True)
         
     db.commit()
@@ -230,7 +229,7 @@ async def process_multi_variant(
                 child_existing.markup_type = user_markup_type
                 child_existing.extra_percent = user_extra
                 child_existing.tax_rate = user_tax
-                child_existing.shopify_handle = final_handle # 🔥 Add kiya
+                child_existing.shopify_handle = final_handle
             else:
                 child_product = Product(
                     asin=v_asin, parent_asin=main_data.get("asin") or main_data.get("parent_asin"), is_variation=True,
@@ -243,7 +242,7 @@ async def process_multi_variant(
                     variant_attributes=v.get("option_values") or [], categories=extracted_categories, tags=final_tags,
                     shopify_product_id=shopify_id,
                     shopify_store_id=store.id, shopify_status="active",
-                    shopify_handle=final_handle, # 🔥 Add kiya
+                    shopify_handle=final_handle,
                 )
                 db.add(child_product)
             saved_variants_count += 1
@@ -256,7 +255,13 @@ async def process_multi_variant(
         db.rollback()
 
     # ==========================================
+    # 🔥 NEW FIX: DB ko band karo API calls se pehle
+    # ==========================================
+    db.close()
+
+    # ==========================================
     # ✅ 7. Publish, Collections, Metafields
+    # (Ab yeh API calls chalengi, bina DB ke, toh timeout nahi hoga)
     # ==========================================
     try:
         await publish_product(shop_domain, token, shopify_id)

@@ -2,12 +2,12 @@
 import { useState } from 'react';
 import axios from 'axios'; 
 import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles, TrendingUp, Lock } from 'lucide-react';
-import { usePlan } from '../hooks/usePlan'; // 👈 Naya Hook Import
+import { usePlan } from '../hooks/usePlan';
 
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
 export default function Settings({ onBack, storeId }) {
-  const { isAdvance } = usePlan(); // 👈 Plan check
+  const { isAdvance } = usePlan(); 
   
   const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
@@ -22,23 +22,26 @@ export default function Settings({ onBack, storeId }) {
       return;
     }
 
-    const finalExtraPercent = markupType === 'both' ? parseFloat(extraPercent || 0) : 0;
+    // 🔥 FIX: Basic user ke liye Advance fields force 0 karo
+    const finalExtraPercent = (isAdvance && markupType === 'both') ? parseFloat(extraPercent || 0) : 0;
+    const finalTaxRate = isAdvance ? parseFloat(taxRate || 0) : 0;
+    const finalComparePrice = isAdvance ? parseFloat(comparePriceMarkup || 0) : 0;
 
     // Save to LocalStorage
     localStorage.setItem('global_markup', markup);
     localStorage.setItem('global_markup_type', markupType);
     localStorage.setItem('global_extra_percent', finalExtraPercent.toString());
-    localStorage.setItem('global_tax_rate', taxRate);
-    localStorage.setItem('global_compare_markup', comparePriceMarkup);
+    localStorage.setItem('global_tax_rate', finalTaxRate.toString());
+    localStorage.setItem('global_compare_markup', finalComparePrice.toString());
 
     try {
       await axios.post(`${API_URL}/app/save-settings`, {
         store_id: storeId,
         markup: parseFloat(markup || 0),
         markup_type: markupType,
-        extra_percent: finalExtraPercent,
-        tax_rate: parseFloat(taxRate || 0),
-        compare_price_markup: parseFloat(comparePriceMarkup || 0),
+        extra_percent: finalExtraPercent,           // 🔥 Fix
+        tax_rate: finalTaxRate,                     // 🔥 Fix
+        compare_price_markup: finalComparePrice,    // 🔥 Fix
         default_stock_qty: 100, 
         shopify_location_id: null
       });

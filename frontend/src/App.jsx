@@ -39,7 +39,6 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
-  // 🔥 FIX: 'loading' state nikala taaki pata chale plan fetch ho raha hai ya nahi
   const { isAdvance, isBasic, plan, status, loading: planLoading } = usePlan();
 
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -114,9 +113,8 @@ export default function App() {
     exchangeTokenAndFetchStores();
   }, []);
 
-  // ✅ FIX #1: URL-based initial tab detection — planLoading aur isAdvance dono pe depend karta hai
+  // ✅ URL-based initial tab detection
   useEffect(() => {
-    // 🔥 Plan load hone tak wait karo, warna flash hoga
     if (planLoading) return;
     if (isAdvance === undefined || isAdvance === null) return;
 
@@ -164,12 +162,12 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedStore]);
 
-  // ✅ FIX #2: Auto-sync status sirf Advance user ke liye fetch karo
+  // ✅ Auto-sync status sirf Advance user ke liye fetch karo
   useEffect(() => {
     const fetchAutoSyncStatus = async () => {
       if (!selectedStoreId) return;
       if (!isAdvance) {
-        setIsAutoSyncEnabled(false); // Basic user ke liye default off
+        setIsAutoSyncEnabled(false); 
         return;
       }
       try {
@@ -183,7 +181,7 @@ export default function App() {
     fetchAutoSyncStatus();
   }, [selectedStoreId, isAdvance]);
 
-  // ✅ FIX #3: handleToggleAutoSync par bhi plan guard
+  // ✅ handleToggleAutoSync par plan guard
   const handleToggleAutoSync = useCallback(async () => {
     if (!isAdvance) {
       alert("Auto-Sync is an Advance Plan feature. Please upgrade.");
@@ -213,14 +211,19 @@ export default function App() {
     setSuccessMsg('');
 
     try {
+      // 🔥 FIX: Basic user ke liye extra, tax aur compare price force 0 karo
+      const payloadExtra = isAdvance ? parseFloat(extraPercent || 0) : 0;
+      const payloadTax = isAdvance ? parseFloat(taxRate || 0) : 0;
+      const payloadCompare = isAdvance ? parseFloat(comparePriceMarkup || 0) : 0;
+
       const res = await axios.post(`${API_URL}/app/add-product`, {
         amazon_url: importUrl,
         shop_domain: selectedStore,
-        markup: parseFloat(markup),
+        markup: parseFloat(markup || 0),
         markup_type: markupType,
-        extra_percent: parseFloat(extraPercent),
-        tax_rate: parseFloat(taxRate),
-        compare_price_markup: parseFloat(comparePriceMarkup),
+        extra_percent: payloadExtra,
+        tax_rate: payloadTax,
+        compare_price_markup: payloadCompare,
         collection_ids: selectedCollections,
         auto_sync: isAdvance ? isAutoSyncEnabled : false
       });
@@ -248,7 +251,6 @@ export default function App() {
     window.history.pushState({}, '', '/');
   }, []);
 
-  // ✅ handleTabChange — isAdvance null check
   const handleTabChange = useCallback((tab) => {
     if (tab === 'manual-sync' && !isAdvance) {
       alert("Manual Sync is an Advance Plan feature. Please upgrade.");
@@ -262,7 +264,6 @@ export default function App() {
     window.history.pushState({}, '', pathMap[tab] || '/');
   }, [isAdvance]);
 
-  // 🔥 FIX: Jab tak plan load ho raha hai, tab tak Loader dikhao (Flash rokne ke liye)
   if (planLoading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8F9FA]">
@@ -311,7 +312,11 @@ export default function App() {
               url={url} setUrl={setUrl} loading={loading} onSubmit={handleModalImport}
               isAutoSyncEnabled={isAutoSyncEnabled} onToggleAutoSync={handleToggleAutoSync}
               collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-              markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+              // 🔥 FIX: Basic user ko 0 values bhej do
+              markup={markup} markupType={markupType} 
+              extraPercent={isAdvance ? extraPercent : '0'} 
+              taxRate={isAdvance ? taxRate : '0'} 
+              comparePriceMarkup={isAdvance ? comparePriceMarkup : '0'}
               API_URL={API_URL} selectedStoreId={selectedStoreId}
               isAdvance={isAdvance}
             />
@@ -331,8 +336,11 @@ export default function App() {
 
       <ImportModal
         key={modalKey} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onImport={handleModalImport}
-        loading={loading} error={error} markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
-        comparePriceMarkup={comparePriceMarkup} collections={collections} selectedCollections={selectedCollections}
+        loading={loading} error={error} markup={markup} markupType={markupType} 
+        extraPercent={isAdvance ? extraPercent : '0'} 
+        taxRate={isAdvance ? taxRate : '0'}
+        comparePriceMarkup={isAdvance ? comparePriceMarkup : '0'} 
+        collections={collections} selectedCollections={selectedCollections}
         setSelectedCollections={setSelectedCollections} isAutoSyncEnabled={isAutoSyncEnabled} onToggleAutoSync={handleToggleAutoSync}
       />
     </div>

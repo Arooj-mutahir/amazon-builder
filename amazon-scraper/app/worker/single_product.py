@@ -24,7 +24,7 @@ async def process_single_variant(
     availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
     # ==========================================
-    # ✅ 1. Handle Generation (PEHLE karo, title banne se pehle)
+    # ✅ 1. Handle Generation
     # ==========================================
     raw_amazon_title = main_data.get("title") or "Untitled Product"
     shopify_payload["original_title"] = raw_amazon_title
@@ -80,7 +80,7 @@ async def process_single_variant(
         new_product.variant_attributes = main_data.get("variant_attributes") or []
         new_product.categories = extracted_categories
         new_product.tags = final_tags
-        new_product.shopify_handle = final_handle  # 🔥 Add kiya
+        new_product.shopify_handle = final_handle 
         db.commit()
         db.refresh(new_product)
     else:
@@ -94,14 +94,14 @@ async def process_single_variant(
             markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
             variant_attributes=main_data.get("variant_attributes") or [], categories=extracted_categories,
             tags=final_tags, shopify_store_id=store.id, shopify_status="active",
-            shopify_handle=final_handle,  # 🔥 Add kiya
+            shopify_handle=final_handle, 
         )
         db.add(new_product)
         db.commit()
         db.refresh(new_product)
 
     # ==========================================
-    # ✅ 3. Shopify API Call (Lamba process)
+    # ✅ 3. Shopify API Call
     # ==========================================
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
 
@@ -142,9 +142,12 @@ async def process_single_variant(
         db.commit()
         print(f"✅ Shopify product created: {shopify_id}", flush=True)
 
+        # 🔥 FIX: DB close karo API calls se pehle (Idle timeout prevent)
+        db.close()
+
         try:
-            token = await _get_valid_access_token(store, db)
-            await publish_product(shop_domain, token, shopify_id)
+            # token already fresh_token se generate ho chuka hai
+            await publish_product(shop_domain, fresh_token, shopify_id)
         except Exception as e: 
             print(f"⚠️ Auto-publish failed: {e}", flush=True)
         
@@ -156,7 +159,8 @@ async def process_single_variant(
                 print(f"📏 Size chart added to metafields", flush=True)
                 
             if raw_details:
-                await set_product_metafields_smart(shop=shop_domain, access_token=await _get_valid_access_token(store, db), product_id=shopify_id, raw_details=raw_details)
+                # fresh_token use karo, naya DB session banane ki zaroorat nahi
+                await set_product_metafields_smart(shop=shop_domain, access_token=fresh_token, product_id=shopify_id, raw_details=raw_details)
         except Exception as e:
             print(f"⚠️ Metafields set nahi ho paye: {e}", flush=True)
     else:
