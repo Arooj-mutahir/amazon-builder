@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Sparkles } from 'lucide-react'; 
+import { AlertTriangle, Sparkles, Loader2 } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -39,7 +39,8 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
-  const { isAdvance, isBasic, plan, status } = usePlan();
+  // 🔥 FIX: 'loading' state nikala taaki pata chale plan fetch ho raha hai ya nahi
+  const { isAdvance, isBasic, plan, status, loading: planLoading } = usePlan();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
@@ -113,9 +114,10 @@ export default function App() {
     exchangeTokenAndFetchStores();
   }, []);
 
-  // ✅ FIX #1: URL-based initial tab detection — isAdvance null/undefined hone par wait karo
+  // ✅ FIX #1: URL-based initial tab detection — planLoading aur isAdvance dono pe depend karta hai
   useEffect(() => {
-    // Plan load hone tak wait — warna Advance user bhi galti se redirect ho sakta hai
+    // 🔥 Plan load hone tak wait karo, warna flash hoga
+    if (planLoading) return;
     if (isAdvance === undefined || isAdvance === null) return;
 
     const path = window.location.pathname;
@@ -123,14 +125,14 @@ export default function App() {
     else if (path.includes('manual-sync')) {
       if (!isAdvance) {
         setActiveTab('billing');
-        window.history.replaceState({}, '', '/billing'); // pushState → replaceState
+        window.history.replaceState({}, '', '/billing'); 
       } else {
         setActiveTab('manual-sync');
       }
     }
     else if (path.includes('billing')) setActiveTab('billing');
     else setActiveTab('dashboard');
-  }, [isAdvance]);
+  }, [isAdvance, planLoading]);
 
   // Keep selectedStoreId in sync
   useEffect(() => {
@@ -220,7 +222,6 @@ export default function App() {
         tax_rate: parseFloat(taxRate),
         compare_price_markup: parseFloat(comparePriceMarkup),
         collection_ids: selectedCollections,
-        // Basic user ke liye auto_sync always false
         auto_sync: isAdvance ? isAutoSyncEnabled : false
       });
 
@@ -247,7 +248,7 @@ export default function App() {
     window.history.pushState({}, '', '/');
   }, []);
 
-  // ✅ handleTabChange — isAdvance null check + replaceState
+  // ✅ handleTabChange — isAdvance null check
   const handleTabChange = useCallback((tab) => {
     if (tab === 'manual-sync' && !isAdvance) {
       alert("Manual Sync is an Advance Plan feature. Please upgrade.");
@@ -260,6 +261,16 @@ export default function App() {
     const pathMap = { dashboard: '/', 'manual-sync': '/manual-sync', settings: '/settings', billing: '/billing' };
     window.history.pushState({}, '', pathMap[tab] || '/');
   }, [isAdvance]);
+
+  // 🔥 FIX: Jab tak plan load ho raha hai, tab tak Loader dikhao (Flash rokne ke liye)
+  if (planLoading) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#F8F9FA]">
+        <Loader2 className="animate-spin text-green-600 mb-4" size={40} />
+        <p className="text-gray-500 font-medium">Loading your workspace...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">

@@ -44,6 +44,8 @@ async def get_store_by_shop(
     return {
         "id": store.id,
         "shop_domain": store.shop_domain,
+         "plan": (store.plan or "basic").lower(),
+          "plan_status": (store.plan_status or "active").lower(),  
         "location_id": store.shopify_location_id,
         "markup": store.default_markup or 0.0,
         "markup_type": store.default_markup_type or "fixed",
