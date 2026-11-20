@@ -18,8 +18,12 @@ export function usePlan() {
   const [data, setData] = useState(FALLBACK);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (showLoader = false) => {
+    // 🔥 FIX: Default mein loader nahi dikhayenge. 
+    // App.jsx initial load pe 'loading' check karega. 
+    // Billing page pe upgrade ke baad loader nahi aayega, UI smoothly update hoga.
+    if (showLoader) setLoading(true);
+
     try {
       // 1. Shopify URL se shop domain nikalo
       const urlParams = new URLSearchParams(window.location.search);
@@ -31,16 +35,14 @@ export function usePlan() {
         return;
       }
 
-      // 2. Backend se store details fetch karo (jahan plan field hai)
-      // Note: Agar aapka koi alag plan endpoint hai (e.g. /billing/status), toh yahan URL change kar sakte ho.
+      // 2. Backend se store details fetch karo
       const res = await axios.get(`${API_URL}/stores/by-shop?shop=${shop}`);
-      
       const storeData = res.data || {};
       
       // 3. Sahi format mein data set karo
       setData({
-        plan: (storeData.plan || "basic").toLowerCase(), // 🔥 Force lowercase (Advance vs advance issue fix)
-        status: storeData.plan_status || "active",       // DB mein plan_status column hai
+        plan: (storeData.plan || "basic").toLowerCase(), 
+        status: (storeData.plan_status || "active").toLowerCase(), 
         features: {
           manual_sync: (storeData.plan || "").toLowerCase() === "advance",
           auto_sync: (storeData.plan || "").toLowerCase() === "advance",
@@ -50,14 +52,16 @@ export function usePlan() {
 
     } catch (err) {
       console.error("Plan fetch failed:", err);
-      setData(FALLBACK); // Agar API fail ho toh hamesha Basic hi maano
+      // 🔥 FIX: Agar network error aaye, toh purana data hi rakho, 
+      // forcefully basic mat banao (warna upgrade ke baad error aane pe downgrade ho jayega)
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    // Initial load pe loader dikhao
+    refresh(true);
   }, [refresh]);
 
   return {
