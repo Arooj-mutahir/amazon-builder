@@ -1,6 +1,7 @@
 # app/worker/sync_job.py
 import traceback
 import asyncio
+from datetime import datetime
 from app.database import SessionLocal
 from app.models import Product, ShopifyStore
 from app.services.amazon_bridge import get_shopify_product_data
@@ -9,18 +10,20 @@ from app.worker.stock_utils import _get_availability, _resolve_stock
 
 _location_cache = {}
 
+
 async def _get_primary_location_cached(store, db):
     key = (store.shop_domain, store.id)
     if key in _location_cache:
         return _location_cache[key]
-    
+
     from app.services.shopify.locations import get_primary_location
     from app.api.routes.shopify.helpers import _get_valid_access_token
-    
+
     token = await _get_valid_access_token(store, db)
     loc = await get_primary_location(store.shop_domain, token)
     _location_cache[key] = loc
     return loc
+
 
 async def _get_product_actual_location(store, token, inventory_item_id, fallback_location):
     query = """
@@ -39,28 +42,65 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
             return levels[0]["location"]["id"]
     except Exception as e:
         print(f"   ⚠️ Could not fetch actual location: {e}", flush=True)
-    
+
     return fallback_location
+
+
+# ============================================================
+# ✅ NAYA HELPER: Store eligible for sync?
+# ============================================================
+def _is_store_sync_eligible(store, db) -> bool:
+    """
+    Advance plan + active + auto_sync ON + not expired → True
+    warna False.
+    """
+    if not store:
+        return False
+
+    # ✅ Advance only
+    if store.plan != "advance":
+        return False
+
+    # ✅ Active status
+    if store.plan_status != "active":
+        return False
+
+    # ✅ Auto-sync toggle ON hona chahiye
+    if not getattr(store, "auto_sync_enabled", False):
+        return False
+
+    # ✅ Expiry check — expire ho gaya to downgrade + skip
+    if store.plan_expires_at and store.plan_expires_at < datetime.utcnow():
+        print(f"   ⏰ Plan expired for {store.shop_domain} → downgrading to basic", flush=True)
+        store.plan = "basic"
+        store.plan_status = "expired"
+        store.auto_sync_enabled = False
+        db.commit()
+        return False
+
+    return True
 
 
 async def sync_prices_job(store_id: int = None):
     print(f"\n⏰ [CRON JOB] Starting Price + Stock Sync for {'Store ID: ' + str(store_id) if store_id else 'ALL Stores'}...", flush=True)
-    
+
     from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
-    
+
     db = SessionLocal()
     try:
-        # ✅ Products query banayein
         query = db.query(Product).filter(
             Product.shopify_product_id.isnot(None)
         )
-        
+
         if store_id:
             query = query.filter(Product.shopify_store_id == store_id)
             print(f"🎯 Filtering products for Store ID: {store_id}", flush=True)
-        
+
         products = query.all()
         print(f"🔍 Found {len(products)} products with Shopify IDs to check.\n", flush=True)
+
+        # ✅ Store cache — baar baar DB hit na ho
+        _eligible_cache = {}
 
         for product in products:
             try:
@@ -68,16 +108,26 @@ async def sync_prices_job(store_id: int = None):
                 if not store:
                     continue
 
+                # ====================================================
+                # ✅ PLAN GATE — Basic / expired / auto-sync-off → skip
+                # ====================================================
+                if store.id not in _eligible_cache:
+                    _eligible_cache[store.id] = _is_store_sync_eligible(store, db)
+
+                if not _eligible_cache[store.id]:
+                    print(f"⏭️  Skipping {product.asin} — store {store.shop_domain} not eligible (plan={store.plan}, status={store.plan_status})", flush=True)
+                    continue
+
                 print(f"=======================================================", flush=True)
                 print(f"🔎 Checking ASIN: {product.asin} (Shopify ID: {product.shopify_product_id})", flush=True)
 
-                # ✅ Store ki current settings uthayein
+                # Store settings
                 store_markup = float(store.default_markup if store.default_markup is not None else 0.0)
                 store_markup_type = str(store.default_markup_type or "fixed").lower()
                 store_extra = float(store.default_extra_percent if store.default_extra_percent is not None else 0.0)
                 store_tax = float(store.default_tax_rate if store.default_tax_rate is not None else 0.0)
                 default_stock = int(getattr(store, "default_stock_qty", 0) or 0)
-                
+
                 store_compare_markup = float(getattr(store, "default_compare_price_markup", 0.0) or 0.0)
 
                 markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
@@ -89,7 +139,7 @@ async def sync_prices_job(store_id: int = None):
                         Product.parent_asin == product.asin,
                         Product.is_variation == True
                     ).all()
-                
+
                 all_products = [product] + child_products
                 print(f"   📦 Total variants to sync: {len(all_products)}", flush=True)
 
@@ -109,8 +159,7 @@ async def sync_prices_job(store_id: int = None):
                     continue
 
                 latest_amazon_price = float(latest_data.get("price") or 0.0)
-                
-                # ✅ FIX: Agar latest_amazon_price 0 hai, toh skip NAHI karenge, balki purani price use karenge
+
                 if latest_amazon_price <= 0:
                     print(f"   ⚠️ Amazon Price is $0.00 for {product.asin}. Using old data if available.", flush=True)
 
@@ -122,7 +171,6 @@ async def sync_prices_job(store_id: int = None):
 
                 print(f"   💰 Calculating prices & updating Database...", flush=True)
                 for prod in all_products:
-                    # ✅ Purana price nikaalein agar naya 0 hai
                     if prod.asin == product.asin:
                         v_amazon_price = latest_amazon_price if latest_amazon_price > 0 else prod.amazon_price
                         v_available = latest_parent_available
@@ -131,8 +179,7 @@ async def sync_prices_job(store_id: int = None):
                         v_data = variants_by_asin.get(prod.asin) or {}
                         fetched_p = v_data.get("price")
                         v_amazon_price = float(fetched_p) if (fetched_p and float(fetched_p) > 0) else latest_amazon_price
-                        
-                        # Agar naya 0 hai, toh purana use karein
+
                         if v_amazon_price <= 0:
                             v_amazon_price = prod.amazon_price
 
@@ -140,13 +187,11 @@ async def sync_prices_job(store_id: int = None):
                         v_raw_stock = v_data.get("stock_qty") if v_data.get("stock_qty") is not None else latest_parent_stock
                         v_stock = _resolve_stock(v_available, v_raw_stock, default_stock)
 
-                    # ✅ Price calculate karein (agar purana price available hai)
                     if v_amazon_price and v_amazon_price > 0:
                         v_final_price = calculate_final_price(v_amazon_price, store_markup, store_markup_type, store_extra, store_tax)
                         prod.price = float(v_final_price)
                         prod.amazon_price = float(v_amazon_price)
 
-                    # ✅ YEH LINES HAR HAAL MEIN CHALENGI (Force Settings Update)
                     prod.markup = store_markup
                     prod.markup_type = store_markup_type
                     prod.extra_percent = store_extra
@@ -210,37 +255,34 @@ async def sync_prices_job(store_id: int = None):
                 price_updates = []
                 stock_updates = []
                 updated_inv_ids = set()
-                
+
                 default_location_id = getattr(store, "shopify_location_id", None) or await _get_primary_location_cached(store, db)
 
                 for prod in all_products:
                     fresh_v_id = fresh_variant_map.get(prod.asin)
                     if fresh_v_id and prod.price:
-                        # ✅ Compare Price logic
                         update_payload = {
-                            "id": fresh_v_id, 
+                            "id": fresh_v_id,
                             "price": f"{prod.price:.2f}"
                         }
-                        
-                        # Agar user ne compare markup > 0 set kiya hai toh add karein
+
                         if store_compare_markup > 0:
                             compare_price = prod.price * (1 + (store_compare_markup / 100.0))
                             update_payload["compareAtPrice"] = f"{compare_price:.2f}"
                             print(f"      🏷️ Setting Compare Price: ${compare_price:.2f} for {prod.asin}", flush=True)
                         else:
-                            # ✅ Agar 0 hai, toh Shopify se hata dein
                             update_payload["compareAtPrice"] = None
-                            
+
                         price_updates.append(update_payload)
 
                     inv_id = fresh_inventory_map.get(prod.asin)
                     if inv_id and inv_id not in updated_inv_ids:
                         actual_loc_id = await _get_product_actual_location(store, token, inv_id, default_location_id)
-                        
+
                         if actual_loc_id:
                             stock_updates.append({
-                                "inventoryItemId": inv_id, 
-                                "locationId": actual_loc_id, 
+                                "inventoryItemId": inv_id,
+                                "locationId": actual_loc_id,
                                 "quantity": int(prod.stock_quantity or 0)
                             })
                             updated_inv_ids.add(inv_id)

@@ -1,12 +1,14 @@
 // src/App.jsx
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { AlertTriangle } from 'lucide-react'; // ✅ Plus icon ki zaroorat nahi hai ab
+import { AlertTriangle, Sparkles } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
 import ManualSync from './components/ManualSync';
 import ImportModal from './components/ImportModal';
+import Billing from './components/Billing'; // 👈 NAYA
+import { usePlan } from './hooks/usePlan'; // 👈 NAYA
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
@@ -37,6 +39,8 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
+  const { isAdvance, isBasic, plan, status } = usePlan(); // 👈 Plan Hook
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
   
@@ -68,6 +72,7 @@ export default function App() {
     const path = window.location.pathname;
     if (path.includes('settings')) setActiveTab('settings');
     else if (path.includes('manual-sync')) setActiveTab('manual-sync');
+    else if (path.includes('billing')) setActiveTab('billing'); // 👈 NAYA
     else setActiveTab('dashboard');
   }, []);
 
@@ -204,14 +209,23 @@ export default function App() {
   }, []);
 
   const handleTabChange = useCallback((tab) => {
+    // 🔒 Basic plan walon ko manual sync se roko
+    if (tab === 'manual-sync' && !isAdvance) {
+      alert("Manual Sync is an Advance Plan feature. Please upgrade.");
+      setActiveTab('billing');
+      window.history.pushState({}, '', '/billing');
+      return;
+    }
+
     setActiveTab(tab);
     const pathMap = {
       dashboard: '/',
       'manual-sync': '/manual-sync',
-      settings: '/settings'
+      settings: '/settings',
+      billing: '/billing' // 👈 NAYA
     };
     window.history.pushState({}, '', pathMap[tab] || '/');
-  }, []);
+  }, [isAdvance]);
 
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
@@ -224,14 +238,35 @@ export default function App() {
             </p>
           </div>
 
-          {/* ✅ Sirf "View Sync Logs" button bacha hai. "Import Products" hata diya gaya hai */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => handleTabChange('manual-sync')}
-              className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              View Sync Logs
-            </button>
+          <div className="flex items-center gap-4">
+            
+            {/* 🏷️ PLAN BADGE */}
+            <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+              isAdvance ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
+            }`}>
+              {isAdvance ? "⭐ Advance" : "Basic"}
+              {status === "expired" && " (Expired)"}
+            </span>
+
+            {/* 🚀 UPGRADE BUTTON (Only for Basic) */}
+            {isBasic && (
+              <button
+                onClick={() => handleTabChange('billing')}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 shadow-sm hover:opacity-90 transition"
+              >
+                <Sparkles size={16} /> Upgrade
+              </button>
+            )}
+
+            {/* 🔄 VIEW SYNC LOGS (Only for Advance) */}
+            {isAdvance && (
+              <button
+                onClick={() => handleTabChange('manual-sync')}
+                className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                View Sync Logs
+              </button>
+            )}
           </div>
         </header>
 
@@ -256,7 +291,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'manual-sync' && (
+          {activeTab === 'manual-sync' && isAdvance && ( // 👈 Extra safety
             <ManualSync 
               API_URL={API_URL} 
               selectedStoreId={selectedStoreId}
@@ -272,6 +307,11 @@ export default function App() {
               API_URL={API_URL}
               shopDomain={selectedStore}
             />
+          )}
+
+          {/* 💳 NAYA: Billing Page */}
+          {activeTab === 'billing' && (
+            <Billing />
           )}
         </div>
       </main>
