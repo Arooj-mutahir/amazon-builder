@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import ShopifyStore, Product
+from app.dependencies import get_store_or_404, require_advance_plan
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -95,7 +96,10 @@ def get_dashboard_stats(
 
 
 # ============================================
-# ✅ NAYA: Saare Products Fetch Karne Ka Endpoint
+# ✅ Saare Products Fetch Karne Ka Endpoint
+# ============================================
+# ============================================
+# ✅ Saare Products Fetch Karne Ka Endpoint
 # ============================================
 @router.get("/products")
 def get_all_products(
@@ -107,8 +111,17 @@ def get_all_products(
         if store_id:
             query = query.filter(Product.shopify_store_id == store_id)
 
-        # Saare products fetch karein (Latest pehle)
         products = query.order_by(Product.id.desc()).all()
+
+        # 🔥 NAYA: Store-level auto_sync fetch karo (single query, N+1 avoid)
+        store_auto_sync_map = {}
+        store_ids = {p.shopify_store_id for p in products if p.shopify_store_id}
+        if store_ids:
+            stores = db.query(ShopifyStore).filter(ShopifyStore.id.in_(store_ids)).all()
+            store_auto_sync_map = {
+                s.id: bool(getattr(s, "auto_sync_enabled", False))
+                for s in stores
+            }
 
         products_data = []
         for p in products:
@@ -122,7 +135,8 @@ def get_all_products(
                 "is_available": bool(p.is_available),
                 "status": "Active" if p.is_available else "Out of Stock",
                 "image": getattr(p, 'image_url', None),
-                "auto_sync": True 
+                # ✅ Store-level value use karo
+                "auto_sync": store_auto_sync_map.get(p.shopify_store_id, False),
             })
 
         return products_data
@@ -133,68 +147,59 @@ def get_all_products(
 
 
 # ============================================
-# ✅ NAYA: Auto-Sync Status Check Endpoint
+# ✅ Auto-Sync Status Check Endpoint
 # ============================================
 @router.get("/auto-sync/status")
 def get_auto_sync_status(
-    store_id: int = Query(...),
-    db: Session = Depends(get_db)
+    store: ShopifyStore = Depends(get_store_or_404),   # 🔥 404 guard only
+    db: Session = Depends(get_db),
 ):
-    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
-    
-    # Agar database mein auto_sync_enabled nahi hai, toh by default True maan lo
+    # Basic user ko 403 nahi dena — sirf `false` return karna hai
+    # taaki frontend gracefully handle kar sake (toggle hide ho jayega)
+    if (store.plan or "").lower() != "advance":
+        return {"enabled": False}
+
     is_enabled = getattr(store, 'auto_sync_enabled', True)
     return {"enabled": is_enabled}
 
 
 # ============================================
-# ✅ NAYA: Auto-Sync Toggle Endpoint
+# ✅ Auto-Sync Toggle Endpoint — ADVANCE ONLY
 # ============================================
 @router.post("/auto-sync/toggle")
 def toggle_auto_sync(
-    store_id: int = Query(...),
-    payload: AutoSyncToggleRequest = None,
-    db: Session = Depends(get_db)
+    payload: AutoSyncToggleRequest,
+    store: ShopifyStore = Depends(require_advance_plan),  # 🔥 403 for Basic
+    db: Session = Depends(get_db),
 ):
-    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
-    
-    # Database mein save karein
+    # store.plan guaranteed 'advance' yahan
     store.auto_sync_enabled = payload.enabled
     db.commit()
-    
+
     return {
-        "enabled": store.auto_sync_enabled, 
+        "enabled": store.auto_sync_enabled,
         "message": "Auto-sync setting updated successfully"
     }
 
 
 # ============================================
-# ✅ NAYA: Manual Sync Trigger Endpoint
+# ✅ Manual Sync Trigger Endpoint — ADVANCE ONLY
 # ============================================
 @router.post("/manual-sync")
 async def trigger_manual_sync(
-    store_id: int = Query(...),
-    db: Session = Depends(get_db)
+    store: ShopifyStore = Depends(require_advance_plan),  # 🔥 403 for Basic
+    db: Session = Depends(get_db),
 ):
-    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
-    if not store:
-        raise HTTPException(status_code=404, detail="Store not found")
-    
+    # store.plan guaranteed 'advance' yahan
     try:
-        # 🔴 IMPORTANT: Yahan aapko apna actual sync function call karna hoga
-        # Misaal: 
+        # 🔴 Yahan apna actual sync function call karo:
         # from app.services.sync import run_full_sync
         # await run_full_sync(store)
-        
-        # Abhi ke liye hum success return kar rahe hain
+
         print(f"🔄 Manual sync triggered for store {store.shop_domain}", flush=True)
-        
+
         return {
-            "status": "success", 
+            "status": "success",
             "message": "Manual sync started successfully. It will run in the background."
         }
     except Exception as e:

@@ -47,7 +47,7 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
 
 
 # ============================================================
-# ✅ NAYA HELPER: Store eligible for sync?
+# ✅ Store eligible for sync?
 # ============================================================
 def _is_store_sync_eligible(store, db) -> bool:
     """
@@ -57,25 +57,33 @@ def _is_store_sync_eligible(store, db) -> bool:
     if not store:
         return False
 
-    # ✅ Advance only
-    if store.plan != "advance":
+    # ✅ FIX #1: Case-insensitive plan check
+    if (store.plan or "").lower() != "advance":
         return False
 
-    # ✅ Active status
-    if store.plan_status != "active":
+    # ✅ FIX #2: plan_status field safe access (agar model mein nahi hai toh skip)
+    plan_status = getattr(store, "plan_status", None)
+    if plan_status and plan_status != "active":
         return False
 
-    # ✅ Auto-sync toggle ON hona chahiye
-    if not getattr(store, "auto_sync_enabled", False):
+    # ✅ FIX #4: auto_sync_enabled default None/NULL handle
+    # Agar NULL hai lekin plan advance hai — auto_sync ko OFF maano (explicit enable required)
+    if not bool(getattr(store, "auto_sync_enabled", False)):
         return False
 
-    # ✅ Expiry check — expire ho gaya to downgrade + skip
-    if store.plan_expires_at and store.plan_expires_at < datetime.utcnow():
+    # ✅ FIX #2: plan_expires_at field safe access
+    expires_at = getattr(store, "plan_expires_at", None)
+    if expires_at and expires_at < datetime.utcnow():
         print(f"   ⏰ Plan expired for {store.shop_domain} → downgrading to basic", flush=True)
         store.plan = "basic"
-        store.plan_status = "expired"
+        if hasattr(store, "plan_status"):
+            store.plan_status = "expired"
         store.auto_sync_enabled = False
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            print(f"   ⚠️ Could not downgrade store {store.id}: {e}", flush=True)
+            db.rollback()
         return False
 
     return True
@@ -115,7 +123,7 @@ async def sync_prices_job(store_id: int = None):
                     _eligible_cache[store.id] = _is_store_sync_eligible(store, db)
 
                 if not _eligible_cache[store.id]:
-                    print(f"⏭️  Skipping {product.asin} — store {store.shop_domain} not eligible (plan={store.plan}, status={store.plan_status})", flush=True)
+                    print(f"⏭️  Skipping {product.asin} — store {store.shop_domain} not eligible (plan={store.plan}, status={getattr(store, 'plan_status', 'N/A')})", flush=True)
                     continue
 
                 print(f"=======================================================", flush=True)
