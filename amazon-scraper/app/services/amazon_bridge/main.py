@@ -194,15 +194,12 @@ async def get_shopify_product_data(asin: str, default_stock_qty: int = DEFAULT_S
             })
 
         # ========================================================
-        # ✅ CATEGORIES & TAGS LOGIC
+        # ✅ CATEGORIES & TAGS LOGIC (FIXED: No Hardcoding)
         # ========================================================
+        # Amazon se jo original categories aayi hain, bas wahi use karo
         categories = [cat.get("name") for cat in raw_data.get("categories") or [] if cat.get("name")]
-        title_lower = str(raw_data.get("title") or "").lower()
         
-        if any(w in title_lower for w in ("pet", "dog", "cat", "puppy")):
-            categories = ["Pet Supplies", "Dogs"]
-        elif any(w in title_lower for w in ("makeup", "beauty", "lipstick")):
-            categories = ["Beauty & Personal Care", "Makeup"]
+        # 🔥 HARDCODED LOGIC HATA DI HAI (Pet Supplies / Makeup wala)
 
         bullets = raw_data.get("bullets") or []
 
@@ -225,8 +222,8 @@ async def get_shopify_product_data(asin: str, default_stock_qty: int = DEFAULT_S
             "parent_asin": variations_data.get("parent_asin"),
             "variant_attributes": variant_attributes,
             "variant_products": variant_products,
-            "tags": categories,  # ✅ Tags sahi set ho gaye
-            "product_type": categories[-1] if categories else "General",  # ✅ Product Type sahi set ho gaya
+            "tags": categories,  # ✅ Ab sirf Amazon ki categories jayengi
+            "product_type": categories[-1] if categories else "",  # ✅ Agar category nahi hai toh empty string
             "is_available": parent_in_stock,
             "stock_qty": parent_stock_qty,
             "rating": _rating_avg(raw_data.get("rating")),
