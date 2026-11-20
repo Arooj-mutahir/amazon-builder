@@ -10,7 +10,6 @@ from app.services.shopify.client import shopify_graphql
 
 router = APIRouter(tags=["billing"])
 
-# 🔥 Helper: Shop domain se store fetch karo
 def get_store_by_shop(shop: str, db: Session):
     store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
     if not store:
@@ -35,7 +34,6 @@ async def upgrade(
     if store.plan == "advance" and store.plan_status == "active":
         raise HTTPException(400, "Already on Advance plan")
 
-    # 🔥 Callback URL (Shopify will append charge_id automatically)
     return_url = f"https://amazon-builder-production.up.railway.app/api/shopify/billing/callback?shop={shop}"
 
     mutation = """
@@ -50,7 +48,7 @@ async def upgrade(
     variables = {
         "name": "Advance Plan",
         "returnUrl": return_url,
-        "test": True,  # 🔥 Production ke liye False karna
+        "test": True,
         "lineItems": [{
             "plan": {
                 "appRecurringPricingDetails": {
@@ -87,7 +85,11 @@ async def billing_callback(
     try:
         store = get_store_by_shop(shop, db)
         
-        # Verify the subscription is active
+        # 🔥 FIX: Shopify charge_id ko GID format mein convert karo
+        # Charge_id aata hai simple number (74227712077), usko GID banado
+        gid = f"gid://shopify/AppSubscription/{charge_id}"
+        print(f"🔍 Querying Shopify with GID: {gid}", flush=True)
+
         query = """
         query getSubscription($id: ID!) {
           node(id: $id) {
@@ -98,8 +100,24 @@ async def billing_callback(
           }
         }
         """
-        result = await shopify_graphql(store.shop_domain, store.access_token, query, {"id": charge_id})
+        result = await shopify_graphql(store.shop_domain, store.access_token, query, {"id": gid})
+        print(f"📥 Shopify Subscription Verify Response: {result}", flush=True)
+        
         node = result.get("data", {}).get("node", {})
+        if not node:
+            # Fallback: Query AppSubscription directly if node is null
+            print(f"⚠️ Node null, trying direct query...", flush=True)
+            query2 = """
+            query getAppSubscription($id: ID!) {
+              appSubscription(id: $id) {
+                id
+                status
+              }
+            }
+            """
+            result = await shopify_graphql(store.shop_domain, store.access_token, query2, {"id": gid})
+            print(f"📥 Fallback Response: {result}", flush=True)
+            node = result.get("data", {}).get("appSubscription", {})
         
         if node.get("status") == "ACTIVE":
             print(f"✅ Charge ACTIVE! Upgrading store {shop} to Advance.", flush=True)
