@@ -3,7 +3,7 @@ import traceback
 import re
 from app.database import SessionLocal
 from app.models import Product, ShopifyStore
-from app.services.shopify import create_shopify_product, publish_product, set_product_metafields_smart
+from app.services.shopify import create_shopify_product, publish_product, add_product_to_collections, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
 from app.worker.title_cleaner import strip_variant_info_from_title
@@ -11,7 +11,8 @@ from app.worker.title_cleaner import strip_variant_info_from_title
 async def process_single_variant(
     store, main_data, user_markup, user_markup_type, user_extra, user_tax, 
     final_tags, extracted_categories, shopify_payload, shop_domain, db, default_stock_qty,
-    compare_price_markup: float = 0.0
+    compare_price_markup: float = 0.0,
+    collection_ids: list = None  # 🔥 FIX: Collection IDs parameter add kiya
 ):
     new_product = None
     existing = db.query(Product).filter(Product.asin == main_data["asin"]).first()
@@ -151,6 +152,17 @@ async def process_single_variant(
         except Exception as e: 
             print(f"⚠️ Auto-publish failed: {e}", flush=True)
         
+        # ==========================================
+        # ✅ 5. NAYA FIX: Add to Collections
+        # ==========================================
+        if collection_ids:
+            try:
+                print(f"🛒 Adding product to collections: {collection_ids}", flush=True)
+                await add_product_to_collections(shop_domain, fresh_token, shopify_id, collection_ids)
+                print(f"✅ Product added to collections successfully!", flush=True)
+            except Exception as e: 
+                print(f"❌ Collection add failed: {e}", flush=True)
+
         try:
             raw_details = dict(main_data.get("details") or {})
             raw_details["asin"] = main_data.get("asin")

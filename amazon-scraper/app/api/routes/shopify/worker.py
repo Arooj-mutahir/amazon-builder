@@ -24,7 +24,7 @@ async def _background_fetch_and_push(
     print(f"\n🔥🔥🔥 BACKGROUND JOB STARTED for {amazon_url} 🔥🔥🔥", flush=True)
 
     # ============================================================
-    # PHASE 1: Store fetch karo (chhota session, jaldi band hoga)
+    # PHASE 1: Store fetch karo
     # ============================================================
     db = SessionLocal()
     try:
@@ -51,11 +51,11 @@ async def _background_fetch_and_push(
         store_plan = store.plan
 
     finally:
-        # 🔥 Scraping se PEHLE DB band karo (idle timeout prevent)
+        # 🔥 Scraping se PEHLE DB band karo
         db.close()
 
     # ============================================================
-    # PHASE 2: Scraping (BINA DB session ke — no idle timeout)
+    # PHASE 2: Scraping (BINA DB session ke)
     # ============================================================
     try:
         main_data = await get_shopify_product_data(asin_quick, default_stock_qty=default_stock_qty)
@@ -67,7 +67,7 @@ async def _background_fetch_and_push(
         return
 
     # ============================================================
-    # PHASE 3: Data process karo (pure Python, koi DB nahi)
+    # PHASE 3: Data process karo (pure Python)
     # ============================================================
     final_price = calculate_final_price(
         main_data.get("price", 0.0), user_markup, user_markup_type, user_extra, user_tax
@@ -150,11 +150,11 @@ async def _background_fetch_and_push(
                 user_markup=user_markup, user_markup_type=user_markup_type, user_extra=user_extra, user_tax=user_tax,
                 final_tags=final_tags, extracted_categories=extracted_categories, 
                 shopify_payload=shopify_payload, shop_domain=shop_domain, db=db2, default_stock_qty=default_stock_qty,
-                compare_price_markup=compare_price_markup
+                compare_price_markup=compare_price_markup,
+                collection_ids=collection_ids  # 🔥 YEH LINE ADD KI HAI
             )
         
-        # 🔥 FIX: Data save hone ke baad turant session close karo
-        # Taki jab Shopify API calls chalein, tab DB idle na baithe
+        # 🔥 Data save hone ke baad turant session close karo
         db2.close()
 
     except Exception as e:

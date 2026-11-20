@@ -265,14 +265,22 @@ async def process_multi_variant(
     # ==========================================
     try:
         await publish_product(shop_domain, token, shopify_id)
+        print(f"✅ Product Published Successfully", flush=True)
     except Exception as e: 
         print(f"⚠️ Auto-publish failed: {e}", flush=True)
     
+    # 🔥 DEBUGGING ADD KIYA HAI
+    print(f"🛒 Collection IDs received from Frontend: {collection_ids}", flush=True)
+    
     if collection_ids:
         try:
+            print(f"🛒 Adding product to collections: {collection_ids}", flush=True)
             await add_product_to_collections(shop_domain, token, shopify_id, collection_ids)
+            print(f"✅ Product added to collections successfully!", flush=True)
         except Exception as e: 
-            print(f"⚠️ Collection add failed: {e}", flush=True)
+            print(f"❌ Collection add failed: {e}", flush=True)
+    else:
+        print(f"⚠️ No collection_ids received (empty list). Product not added to any collection.", flush=True)
     
     try:
         raw_details = dict(main_data.get("details") or {})
