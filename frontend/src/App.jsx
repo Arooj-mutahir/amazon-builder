@@ -2,13 +2,15 @@
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Sparkles } from 'lucide-react'; 
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { getSessionToken } from "@shopify/app-bridge/utilities";
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
 import ManualSync from './components/ManualSync';
 import ImportModal from './components/ImportModal';
-import Billing from './components/Billing'; // 👈 NAYA
-import { usePlan } from './hooks/usePlan'; // 👈 NAYA
+import Billing from './components/Billing'; 
+import { usePlan } from './hooks/usePlan'; 
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
 
@@ -39,7 +41,8 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
-  const { isAdvance, isBasic, plan, status } = usePlan(); // 👈 Plan Hook
+  const { isAdvance, isBasic, plan, status } = usePlan();
+  const app = useAppBridge(); // 🔥 App Bridge Initialize
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
@@ -67,35 +70,52 @@ export default function App() {
 
   const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
 
-  // URL-based initial tab detection
+  // 🔥 NAYA: ID Token Exchange aur Store Save Logic
   useEffect(() => {
-    const path = window.location.pathname;
-    if (path.includes('settings')) setActiveTab('settings');
-    else if (path.includes('manual-sync')) setActiveTab('manual-sync');
-    else if (path.includes('billing')) setActiveTab('billing'); // 👈 NAYA
-    else setActiveTab('dashboard');
-  }, []);
-
-  // Fetch stores on mount
-  useEffect(() => {
-    const fetchStores = async () => {
+    const exchangeTokenAndFetchStores = async () => {
+      if (!app) return;
+      
       try {
+        // 1. App Bridge se ID Token nikalo
+        const sessionToken = await getSessionToken(app);
+        const urlParams = new URLSearchParams(window.location.search);
+        const shopFromUrl = urlParams.get('shop');
+
+        // 2. Backend ko token bhe kar store save karwao
+        if (sessionToken && shopFromUrl) {
+          console.log("Exchanging token for:", shopFromUrl);
+          await axios.post(`${API_URL}/token-exchange`, {
+            shop: shopFromUrl,
+            id_token: sessionToken
+          });
+          console.log("✅ Store saved to database");
+        }
+
+        // 3. Ab stores fetch karo (ab naya store DB mein hoga)
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
 
         if (res.data.length > 0) {
-          const urlParams = new URLSearchParams(window.location.search);
-          const shopFromUrl = urlParams.get('shop');
           const foundStore = res.data.find(s => s.shop_domain === shopFromUrl) || res.data[0];
           setSelectedStore(foundStore.shop_domain);
           setSelectedStoreId(foundStore.id);
         }
       } catch (err) {
-        console.error("Failed to fetch stores", err);
+        console.error("Failed to exchange token or fetch stores", err);
       }
     };
-    fetchStores();
-  }, [API_URL]);
+    
+    exchangeTokenAndFetchStores();
+  }, [app, API_URL]);
+
+  // URL-based initial tab detection
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.includes('settings')) setActiveTab('settings');
+    else if (path.includes('manual-sync')) setActiveTab('manual-sync');
+    else if (path.includes('billing')) setActiveTab('billing');
+    else setActiveTab('dashboard');
+  }, []);
 
   // Keep selectedStoreId in sync
   useEffect(() => {
@@ -209,7 +229,6 @@ export default function App() {
   }, []);
 
   const handleTabChange = useCallback((tab) => {
-    // 🔒 Basic plan walon ko manual sync se roko
     if (tab === 'manual-sync' && !isAdvance) {
       alert("Manual Sync is an Advance Plan feature. Please upgrade.");
       setActiveTab('billing');
@@ -222,7 +241,7 @@ export default function App() {
       dashboard: '/',
       'manual-sync': '/manual-sync',
       settings: '/settings',
-      billing: '/billing' // 👈 NAYA
+      billing: '/billing'
     };
     window.history.pushState({}, '', pathMap[tab] || '/');
   }, [isAdvance]);
@@ -240,7 +259,6 @@ export default function App() {
 
           <div className="flex items-center gap-4">
             
-            {/* 🏷️ PLAN BADGE */}
             <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
               isAdvance ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
             }`}>
@@ -248,7 +266,6 @@ export default function App() {
               {status === "expired" && " (Expired)"}
             </span>
 
-            {/* 🚀 UPGRADE BUTTON (Only for Basic) */}
             {isBasic && (
               <button
                 onClick={() => handleTabChange('billing')}
@@ -258,7 +275,6 @@ export default function App() {
               </button>
             )}
 
-            {/* 🔄 VIEW SYNC LOGS (Only for Advance) */}
             {isAdvance && (
               <button
                 onClick={() => handleTabChange('manual-sync')}
@@ -291,7 +307,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'manual-sync' && isAdvance && ( // 👈 Extra safety
+          {activeTab === 'manual-sync' && isAdvance && ( 
             <ManualSync 
               API_URL={API_URL} 
               selectedStoreId={selectedStoreId}
@@ -309,7 +325,6 @@ export default function App() {
             />
           )}
 
-          {/* 💳 NAYA: Billing Page */}
           {activeTab === 'billing' && (
             <Billing />
           )}
