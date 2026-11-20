@@ -1,6 +1,6 @@
 # app/worker/single_product.py
 import traceback
-import re  # ✅ NAYA: Regex ke liye
+import re
 from app.database import SessionLocal
 from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product, publish_product, set_product_metafields_smart
@@ -23,6 +23,40 @@ async def process_single_variant(
     parent_stock = parent_stock_qty or 0
     availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
+    # ==========================================
+    # ✅ 1. Handle Generation (PEHLE karo, title banne se pehle)
+    # ==========================================
+    raw_amazon_title = main_data.get("title") or "Untitled Product"
+    shopify_payload["original_title"] = raw_amazon_title
+
+    clean_title = strip_variant_info_from_title(raw_amazon_title, [], main_data)
+    shopify_payload["shopify_title"] = clean_title
+    shopify_payload["title"] = clean_title
+    print(f"🏷️ Final Shopify Title (Original without variant): {clean_title}", flush=True)
+
+    FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
+    product_title = clean_title or "amazon-product"
+    clean_handle_title = re.sub(r"['’]", "", product_title)              
+    clean_handle_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_handle_title)     
+    all_words = clean_handle_title.split()
+    meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
+    selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
+    base_handle = "-".join(selected_words) if selected_words else "product"
+
+    # Duplicate Handle Check
+    existing_products = db.query(Product).filter(Product.shopify_handle.like(f"{base_handle}%")).all()
+    if existing_products:
+        suffix = len(existing_products) + 1
+        final_handle = f"{base_handle}-{suffix}"
+    else:
+        final_handle = base_handle
+
+    shopify_payload["handle"] = final_handle
+    print(f"🔗 Final Clean Handle: {final_handle}", flush=True)
+
+    # ==========================================
+    # ✅ 2. DB Save/Update (BEFORE Shopify API)
+    # ==========================================
     if existing:
         new_product = existing
         new_product.shopify_store_id = store.id
@@ -46,6 +80,7 @@ async def process_single_variant(
         new_product.variant_attributes = main_data.get("variant_attributes") or []
         new_product.categories = extracted_categories
         new_product.tags = final_tags
+        new_product.shopify_handle = final_handle  # 🔥 Add kiya
         db.commit()
         db.refresh(new_product)
     else:
@@ -59,16 +94,21 @@ async def process_single_variant(
             markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
             variant_attributes=main_data.get("variant_attributes") or [], categories=extracted_categories,
             tags=final_tags, shopify_store_id=store.id, shopify_status="active",
+            shopify_handle=final_handle,  # 🔥 Add kiya
         )
-        db.add(new_product); db.commit(); db.refresh(new_product)
+        db.add(new_product)
+        db.commit()
+        db.refresh(new_product)
 
+    # ==========================================
+    # ✅ 3. Shopify API Call (Lamba process)
+    # ==========================================
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
 
     print(f"🔄 Refreshing token before product creation for {shop_domain}...", flush=True)
     fresh_token = await _get_valid_access_token(store, db, force_refresh=True)
     print(f"🔑 Fresh token obtained: {fresh_token[:15]}...", flush=True)
 
-    # ✅ Compare Price
     final_price = shopify_payload["price"]
     compare_price = None
     if compare_price_markup > 0:
@@ -76,41 +116,6 @@ async def process_single_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
-
-    # ==========================================
-    # ✅ Amazon Original Title (Variant/Color Info Hata Kar)
-    # ==========================================
-    # Amazon ka original title hi use karein (kisi doosre source se replace nahi karna)
-    # Sirf us original title ke andar se variant/color/size ki information hatayein
-    raw_amazon_title = main_data.get("title") or "Untitled Product"
-    shopify_payload["original_title"] = raw_amazon_title
-
-    clean_title = strip_variant_info_from_title(raw_amazon_title, [], main_data)
-    shopify_payload["shopify_title"] = clean_title
-    shopify_payload["title"] = clean_title
-    print(f"🏷️ Final Shopify Title (Original without variant): {clean_title}", flush=True)
-
-    # ✅ NAYA: Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
-    FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
-    product_title = clean_title or "amazon-product"
-    clean_handle_title = re.sub(r"['’]", "", product_title)              
-    clean_handle_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_handle_title)     
-    all_words = clean_handle_title.split()
-    meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
-    selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
-    base_handle = "-".join(selected_words) if selected_words else "product"
-
-    # ✅ 2. Duplicate Handle Check (Shopify par conflict se bachne ke liye)
-    existing_products = db.query(Product).filter(Product.shopify_handle.like(f"{base_handle}%")).all()
-    if existing_products:
-        suffix = len(existing_products) + 1
-        final_handle = f"{base_handle}-{suffix}"
-    else:
-        final_handle = base_handle
-
-    # ✅ 3. Final Handle set karein
-    shopify_payload["handle"] = final_handle
-    print(f"🔗 Final Clean Handle: {final_handle}", flush=True)
 
     # ✅ Create product
     result = await create_shopify_product(
@@ -130,6 +135,9 @@ async def process_single_variant(
             print(f"❌ No product ID returned from Shopify!", flush=True)
             return
 
+        # ==========================================
+        # ✅ 4. Shopify ID ko DB mein Update karo
+        # ==========================================
         new_product.shopify_product_id = shopify_id
         db.commit()
         print(f"✅ Shopify product created: {shopify_id}", flush=True)
@@ -140,11 +148,9 @@ async def process_single_variant(
         except Exception as e: 
             print(f"⚠️ Auto-publish failed: {e}", flush=True)
         
-        # ✅ NAYA: Metafields set karein (Size Chart included)
         try:
             raw_details = dict(main_data.get("details") or {})
             raw_details["asin"] = main_data.get("asin")
-            # ✅ Size chart ko metafield mein bhejein
             if shopify_payload.get("size_chart"):
                 raw_details["size_chart"] = shopify_payload["size_chart"]
                 print(f"📏 Size chart added to metafields", flush=True)

@@ -21,16 +21,22 @@ async def _background_fetch_and_push(
     compare_price_markup: float = 0.0,
     collection_ids: list = None
 ):
+    print(f"\n🔥🔥🔥 BACKGROUND JOB STARTED for {amazon_url} 🔥🔥🔥", flush=True)
+
+    # ============================================================
+    # PHASE 1: Store fetch karo (chhota session, jaldi band hoga)
+    # ============================================================
     db = SessionLocal()
     try:
-        print(f"\n🔥🔥🔥 BACKGROUND JOB STARTED for {amazon_url} 🔥🔥🔥", flush=True)
         store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
         if not store:
-            print("❌ Store not found", flush=True); return
+            print("❌ Store not found", flush=True)
+            return
 
         asin_quick = extract_asin_from_url(amazon_url)
         if not asin_quick:
-            print(f"❌ Could not extract ASIN from {amazon_url}", flush=True); return
+            print(f"❌ Could not extract ASIN from {amazon_url}", flush=True)
+            return
 
         user_markup, user_markup_type, user_extra, user_tax = _resolve_markup(
             store, markup, markup_type, extra_percent, tax_rate
@@ -39,90 +45,121 @@ async def _background_fetch_and_push(
         print(f"⚙️ [UI FETCH] Markup={user_markup}, Type={user_markup_type}, Extra={user_extra}%, Tax={user_tax}%, Compare={compare_price_markup}%", flush=True)
         default_stock_qty = getattr(store, "default_stock_qty", 0) or 0
 
-        try:
-            main_data = await get_shopify_product_data(asin_quick, default_stock_qty=default_stock_qty)
-            # ✅ NAYA: Yahan print karein
-            print(f"✅ Bridge Data Fetched: {str(main_data.get('title'))[:60]}...", flush=True)
-            print(f"📏 Size Chart Length: {len(main_data.get('size_chart') or '')}", flush=True)
-        except Exception as e:
-            print(f"❌ Bridge Fetch fail: {e}", flush=True); traceback.print_exc(); return
+        # 🔥 IMPORTANT: Store fields ko local variables mein copy karo
+        # taaki DB session band hone ke baad bhi accessible rahein
+        store_id_local = store.id
+        store_domain_local = store.shop_domain
+        store_plan = store.plan
 
-        final_price = calculate_final_price(
-            main_data.get("price", 0.0), user_markup, user_markup_type, user_extra, user_tax
-        )
+    finally:
+        # 🔥 Scraping se PEHLE DB band karo (idle timeout prevent)
+        db.close()
 
-        extracted_categories = main_data.get("tags") or []
-        final_tags = []
-        for cat in extracted_categories:
-            if ">" in cat:
-                parts = [p.strip() for p in cat.split(">")]
-                final_tags.extend(parts)
-            else:
-                if cat.strip(): final_tags.append(cat.strip())
-        if main_data.get("brand"): final_tags.append(main_data["brand"].strip())
-        final_tags.append(main_data["asin"])
-        final_tags = list(set(final_tags))
+    # ============================================================
+    # PHASE 2: Scraping (BINA DB session ke — no idle timeout)
+    # ============================================================
+    try:
+        main_data = await get_shopify_product_data(asin_quick, default_stock_qty=default_stock_qty)
+        print(f"✅ Bridge Data Fetched: {str(main_data.get('title'))[:60]}...", flush=True)
+        print(f"📏 Size Chart Length: {len(main_data.get('size_chart') or '')}", flush=True)
+    except Exception as e:
+        print(f"❌ Bridge Fetch fail: {e}", flush=True)
+        traceback.print_exc()
+        return
 
-        parent_available = _get_availability(main_data)
-        parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_qty"), default_stock_qty)
-        parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
-        parent_stock = parent_stock_qty or 0
+    # ============================================================
+    # PHASE 3: Data process karo (pure Python, koi DB nahi)
+    # ============================================================
+    final_price = calculate_final_price(
+        main_data.get("price", 0.0), user_markup, user_markup_type, user_extra, user_tax
+    )
 
-        shopify_payload = {
-            "title":        main_data.get("title"),
-            "description":  main_data.get("description", ""),
-            "bullets":      main_data.get("bullets") or [],
-            "size_chart":   main_data.get("size_chart") or "",
-            "reviews":      main_data.get("reviews") or [],
-            "brand":        main_data.get("brand"),
-            "images":       main_data.get("images") or [],
-            "price":        final_price,
-            "tags":         final_tags,
-            "categories":   extracted_categories,
-            "product_type": extracted_categories[-1] if extracted_categories else "General",
-            "asin":         main_data.get("asin"),
-            "details":      main_data.get("details") or {},
-            "is_available": parent_in_stock,
-            "in_stock":     parent_in_stock,
-            "stock_qty":    parent_stock,
-        }
-        
-        clean_variants = _build_clean_variants(main_data, [])
-        variants_by_asin = {v["asin"]: v for v in (main_data.get("variant_products") or []) if v.get("asin")}
-        
-        for v in clean_variants:
-            v_asin = v.get("asin")
-            bridge_v = variants_by_asin.get(v_asin)
-            if bridge_v:
-                if bridge_v.get("price") and bridge_v["price"] > 0:
-                    v["price"] = bridge_v["price"]
-                v["in_stock"] = _get_availability(bridge_v)
-                v["stock_qty"] = bridge_v.get("stock_qty")
+    extracted_categories = main_data.get("tags") or []
+    final_tags = []
+    for cat in extracted_categories:
+        if ">" in cat:
+            parts = [p.strip() for p in cat.split(">")]
+            final_tags.extend(parts)
+        else:
+            if cat.strip():
+                final_tags.append(cat.strip())
+    if main_data.get("brand"):
+        final_tags.append(main_data["brand"].strip())
+    final_tags.append(main_data["asin"])
+    final_tags = list(set(final_tags))
+
+    parent_available = _get_availability(main_data)
+    parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_qty"), default_stock_qty)
+    parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
+    parent_stock = parent_stock_qty or 0
+
+    shopify_payload = {
+        "title":        main_data.get("title"),
+        "description":  main_data.get("description", ""),
+        "bullets":      main_data.get("bullets") or [],
+        "size_chart":   main_data.get("size_chart") or "",
+        "reviews":      main_data.get("reviews") or [],
+        "brand":        main_data.get("brand"),
+        "images":       main_data.get("images") or [],
+        "price":        final_price,
+        "tags":         final_tags,
+        "categories":   extracted_categories,
+        "product_type": extracted_categories[-1] if extracted_categories else "General",
+        "asin":         main_data.get("asin"),
+        "details":      main_data.get("details") or {},
+        "is_available": parent_in_stock,
+        "in_stock":     parent_in_stock,
+        "stock_qty":    parent_stock,
+    }
+    
+    clean_variants = _build_clean_variants(main_data, [])
+    variants_by_asin = {v["asin"]: v for v in (main_data.get("variant_products") or []) if v.get("asin")}
+    
+    for v in clean_variants:
+        v_asin = v.get("asin")
+        bridge_v = variants_by_asin.get(v_asin)
+        if bridge_v:
+            if bridge_v.get("price") and bridge_v["price"] > 0:
+                v["price"] = bridge_v["price"]
+            v["in_stock"] = _get_availability(bridge_v)
+            v["stock_qty"] = bridge_v.get("stock_qty")
+
+    # ============================================================
+    # PHASE 4: NAYA DB session banao aur save karo
+    # ============================================================
+    db2 = SessionLocal()
+    try:
+        # 🔥 Naya session, fresh connection — timeout nahi hoga
+        store_fresh = db2.query(ShopifyStore).filter(ShopifyStore.id == store_id_local).first()
+        if not store_fresh:
+            print("❌ Store disappeared during scraping", flush=True)
+            return
 
         if clean_variants and len(clean_variants) > 0:
             print(f"🆕 Creating MULTI-VARIANT product with {len(clean_variants)} variants...", flush=True)
             await process_multi_variant(
-                store=store, main_data=main_data, clean_variants=clean_variants,
+                store=store_fresh, main_data=main_data, clean_variants=clean_variants,
                 user_markup=user_markup, user_markup_type=user_markup_type, user_extra=user_extra, user_tax=user_tax,
                 final_tags=final_tags, extracted_categories=extracted_categories, 
                 shopify_payload=shopify_payload, shop_domain=shop_domain, collection_ids=collection_ids, 
-                db=db, default_stock_qty=default_stock_qty,
+                db=db2, default_stock_qty=default_stock_qty,
                 compare_price_markup=compare_price_markup
             )
         else:
             print(f"🆕 Creating SINGLE-VARIANT product...", flush=True)
             await process_single_variant(
-                store=store, main_data=main_data, 
+                store=store_fresh, main_data=main_data, 
                 user_markup=user_markup, user_markup_type=user_markup_type, user_extra=user_extra, user_tax=user_tax,
                 final_tags=final_tags, extracted_categories=extracted_categories, 
-                shopify_payload=shopify_payload, shop_domain=shop_domain, db=db, default_stock_qty=default_stock_qty,
+                shopify_payload=shopify_payload, shop_domain=shop_domain, db=db2, default_stock_qty=default_stock_qty,
                 compare_price_markup=compare_price_markup
             )
-            
     except Exception as e:
-        print(f"\n❌ CRASHED: {e}", flush=True); traceback.print_exc()
-    finally: 
-        db.close()
+        print(f"\n❌ SAVE CRASHED: {e}", flush=True)
+        traceback.print_exc()
+        db2.rollback()
+    finally:
+        db2.close()
 
 # Scheduler Setup
 scheduler = AsyncIOScheduler()

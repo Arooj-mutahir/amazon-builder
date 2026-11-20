@@ -23,36 +23,31 @@ async def process_multi_variant(
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
     # ==========================================
-    # ✅ 1. Variant Reordering (Shopify Default Variant)
+    # ✅ 1. Variant Reordering
     # ==========================================
-    # Selected child ASIN (URL wala) match karke index 0 par shift karein
     clean_variants = reorder_variants_for_default(clean_variants, main_data.get("asin"))
 
     # ==========================================
-    # ✅ 2. Amazon Original Title (Variant/Color Info Hata Kar)
+    # ✅ 2. Title & Handle Logic
     # ==========================================
-    # Amazon ka original title hi use karein (kisi doosre source se replace nahi karna)
-    # Sirf us original title ke andar se variant/color/size ki information hatayein
     raw_amazon_title = main_data.get("title") or "Untitled Product"
     shopify_payload["original_title"] = raw_amazon_title
 
     clean_title = strip_variant_info_from_title(raw_amazon_title, clean_variants, main_data)
     shopify_payload["shopify_title"] = clean_title
     shopify_payload["title"] = clean_title
-    print(f"🏷️ Final Shopify Title (Original without variant): {clean_title}", flush=True)
+    print(f"🏷️ Final Shopify Title: {clean_title}", flush=True)
 
-    # ✅ Chota aur Saaf URL Handle (Pehle 5 words, filler words & special chars hata kar)
-    # 1. Clean Title se handle banayein
     FILLER_WORDS = {"with", "and", "for", "the", "to", "of", "in", "on", "by", "a", "an", "at", "from"}
     product_title = clean_title or "amazon-product"
-    clean_handle_title = re.sub(r"['’]", "", product_title)              # Women's -> Womens
-    clean_handle_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_handle_title)     # Special chars hatao
+    clean_handle_title = re.sub(r"['’]", "", product_title)
+    clean_handle_title = re.sub(r"[^a-zA-Z0-9\s]", " ", clean_handle_title)
     all_words = clean_handle_title.split()
     meaningful_words = [w.lower() for w in all_words if w.lower() not in FILLER_WORDS]
     selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
     base_handle = "-".join(selected_words) if selected_words else "product"
 
-    # 2. Duplicate Handle Check (Shopify par conflict se bachne ke liye)
+    # Duplicate Handle Check (Fast DB Query)
     existing_products = db.query(Product).filter(Product.shopify_handle.like(f"{base_handle}%")).all()
     if existing_products:
         suffix = len(existing_products) + 1
@@ -60,13 +55,16 @@ async def process_multi_variant(
     else:
         final_handle = base_handle
 
-    # 3. Final Handle set karein
     shopify_payload["handle"] = final_handle
     print(f"🔗 Final Clean Handle: {final_handle}", flush=True)
 
-    # ✅ Shopify par product create karein
+    # ==========================================
+    # ✅ 3. SHOPIFY API CALL (Long Process)
+    # Note: Yahan DB connection idle rahega thodi der, par worker.py ne fresh session diya hai isliye safe hai.
+    # ==========================================
+    token = await _get_valid_access_token(store, db)
     result = await create_shopify_product_with_variants(
-        shop=shop_domain, access_token=await _get_valid_access_token(store, db),
+        shop=shop_domain, access_token=token,
         product_data=shopify_payload, variants_raw=clean_variants,
         markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
     )
@@ -87,15 +85,14 @@ async def process_multi_variant(
 
     print(f"✅ Product created with ID: {shopify_id}", flush=True)
 
-    # ✅ Default Variant ka Title update karein
+    # ==========================================
+    # ✅ 4. Update Default Variant Title (API Call)
+    # ==========================================
     try:
-        token = await _get_valid_access_token(store, db)
         get_variants_query = """
         query getProductVariants($id: ID!) {
           product(id: $id) {
-            variants(first: 1) {
-              nodes { id }
-            }
+            variants(first: 1) { nodes { id } }
           }
         }
         """
@@ -104,7 +101,6 @@ async def process_multi_variant(
         
         if default_variant_nodes:
             default_variant_id = default_variant_nodes[0]["id"]
-            
             update_mutation = """
             mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
               productVariantsBulkUpdate(productId: $productId, variants: $variants) {
@@ -115,21 +111,18 @@ async def process_multi_variant(
             """
             update_res = await shopify_graphql(shop_domain, token, update_mutation, {
                 "productId": shopify_id,
-                "variants": [{
-                    "id": default_variant_id,
-                    "title": main_data.get("title", "")[:255]
-                }]
+                "variants": [{"id": default_variant_id, "title": main_data.get("title", "")[:255]}]
             })
             errs = (update_res.get("data", {}).get("productVariantsBulkUpdate") or {}).get("userErrors") or []
             if errs:
                 print(f"⚠️ Default variant title update failed: {errs}", flush=True)
             else:
-                print(f"✅ Default variant title updated to: {main_data.get('title')[:50]}...", flush=True)
+                print(f"✅ Default variant title updated.", flush=True)
     except Exception as e:
         print(f"⚠️ Default variant title update error: {e}", flush=True)
 
     # ==========================================
-    # ✅ PARENT PRODUCT DATABASE MEIN SAVE KAREIN
+    # ✅ 5. PARENT PRODUCT SAVE (DB)
     # ==========================================
     new_product = db.query(Product).filter(Product.asin == main_data["asin"]).first()
     
@@ -166,7 +159,8 @@ async def process_multi_variant(
             tags=final_tags, 
             shopify_store_id=store.id, 
             shopify_status="active",
-            shopify_product_id=shopify_id
+            shopify_product_id=shopify_id,
+            shopify_handle=final_handle, # 🔥 Add kiya
         )
         db.add(new_product)
         print(f"✅ Parent product created in DB", flush=True)
@@ -191,12 +185,13 @@ async def process_multi_variant(
         new_product.tax_rate = user_tax
         new_product.categories = extracted_categories
         new_product.tags = final_tags
+        new_product.shopify_handle = final_handle # 🔥 Add kiya
         print(f"✅ Parent product updated in DB", flush=True)
         
     db.commit()
 
     # ==========================================
-    # ✅ CHILD PRODUCTS DATABASE MEIN SAVE KAREIN
+    # ✅ 6. CHILD PRODUCTS SAVE (DB)
     # ==========================================
     try:
         saved_variants_count = 0
@@ -235,6 +230,7 @@ async def process_multi_variant(
                 child_existing.markup_type = user_markup_type
                 child_existing.extra_percent = user_extra
                 child_existing.tax_rate = user_tax
+                child_existing.shopify_handle = final_handle # 🔥 Add kiya
             else:
                 child_product = Product(
                     asin=v_asin, parent_asin=main_data.get("asin") or main_data.get("parent_asin"), is_variation=True,
@@ -247,6 +243,7 @@ async def process_multi_variant(
                     variant_attributes=v.get("option_values") or [], categories=extracted_categories, tags=final_tags,
                     shopify_product_id=shopify_id,
                     shopify_store_id=store.id, shopify_status="active",
+                    shopify_handle=final_handle, # 🔥 Add kiya
                 )
                 db.add(child_product)
             saved_variants_count += 1
@@ -256,22 +253,22 @@ async def process_multi_variant(
 
     except Exception as e:
         print(f"⚠️ Failed to parse variant response: {e}", flush=True)
+        db.rollback()
 
-    # Publish product
+    # ==========================================
+    # ✅ 7. Publish, Collections, Metafields
+    # ==========================================
     try:
-        token = await _get_valid_access_token(store, db)
         await publish_product(shop_domain, token, shopify_id)
     except Exception as e: 
         print(f"⚠️ Auto-publish failed: {e}", flush=True)
     
     if collection_ids:
         try:
-            token = await _get_valid_access_token(store, db)
             await add_product_to_collections(shop_domain, token, shopify_id, collection_ids)
         except Exception as e: 
             print(f"⚠️ Collection add failed: {e}", flush=True)
     
-    # ✅ Metafields set karein (Size Chart included)
     try:
         raw_details = dict(main_data.get("details") or {})
         raw_details["asin"] = main_data.get("asin")
@@ -280,6 +277,6 @@ async def process_multi_variant(
             print(f"📏 Size chart added to metafields", flush=True)
             
         if raw_details:
-            await set_product_metafields_smart(shop=shop_domain, access_token=await _get_valid_access_token(store, db), product_id=shopify_id, raw_details=raw_details)
+            await set_product_metafields_smart(shop=shop_domain, access_token=token, product_id=shopify_id, raw_details=raw_details)
     except Exception as e:
         print(f"⚠️ Metafields set nahi ho paye: {e}", flush=True)
