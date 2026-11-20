@@ -35,9 +35,7 @@ async def upgrade(
     if store.plan == "advance" and store.plan_status == "active":
         raise HTTPException(400, "Already on Advance plan")
 
-    # 🔥 IMPORTANT: Callback URL (Bina charge_id ke, kyunki wo abhi generate nahi hui)
-    # Shopify jab return_url par bhejega, toh wo automatically URL mein 
-    # charge_id add kar dega (GraphQL API ka feature hai).
+    # 🔥 Callback URL (Shopify will append charge_id automatically)
     return_url = f"https://amazon-builder-production.up.railway.app/api/shopify/billing/callback?shop={shop}"
 
     mutation = """
@@ -52,7 +50,7 @@ async def upgrade(
     variables = {
         "name": "Advance Plan",
         "returnUrl": return_url,
-        "test": True,
+        "test": True,  # 🔥 Production ke liye False karna
         "lineItems": [{
             "plan": {
                 "appRecurringPricingDetails": {
@@ -75,45 +73,51 @@ async def upgrade(
 
 @router.get("/callback")
 async def billing_callback(
-    charge_id: str = Query(None), # Shopify charge_id bhejta hai (agar success ho)
+    charge_id: str = Query(None),
     shop: str = Query(...), 
     db: Session = Depends(get_db)
 ):
     print(f"🔙 Billing callback received for {shop} | Charge ID: {charge_id}", flush=True)
     
-    # Agar user ne payment cancel kar diya aur charge_id nahi aayi
     if not charge_id:
-        print("⚠️ No charge_id found in callback URL. User may have cancelled.", flush=True)
+        print("⚠️ No charge_id found in callback URL.", flush=True)
         frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?error=cancelled"
         return RedirectResponse(url=frontend_url)
 
-    store = get_store_by_shop(shop, db)
-
-    query = """
-    query getSubscription($id: ID!) {
-      node(id: $id) {
-        ... on AppSubscription {
-          id
-          status
+    try:
+        store = get_store_by_shop(shop, db)
+        
+        # Verify the subscription is active
+        query = """
+        query getSubscription($id: ID!) {
+          node(id: $id) {
+            ... on AppSubscription {
+              id
+              status
+            }
+          }
         }
-      }
-    }
-    """
-    result = await shopify_graphql(store.shop_domain, store.access_token, query, {"id": charge_id})
-    node = result.get("data", {}).get("node", {})
-    
-    if node.get("status") == "ACTIVE":
-        print(f"✅ Charge ACTIVE! Upgrading store {shop} to Advance.", flush=True)
-        store.plan = "advance"
-        store.plan_status = "active"
-        store.plan_started_at = datetime.utcnow()
-        store.plan_expires_at = datetime.utcnow() + timedelta(days=30)
-        store.auto_sync_enabled = True
-        db.commit()
-        frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?success=true"
-    else:
-        print(f"❌ Charge NOT ACTIVE. Status: {node.get('status')}", flush=True)
-        frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?error=failed"
+        """
+        result = await shopify_graphql(store.shop_domain, store.access_token, query, {"id": charge_id})
+        node = result.get("data", {}).get("node", {})
+        
+        if node.get("status") == "ACTIVE":
+            print(f"✅ Charge ACTIVE! Upgrading store {shop} to Advance.", flush=True)
+            store.plan = "advance"
+            store.plan_status = "active"
+            store.plan_started_at = datetime.utcnow()
+            store.plan_expires_at = datetime.utcnow() + timedelta(days=30)
+            store.auto_sync_enabled = True
+            db.commit()
+            frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?success=true"
+        else:
+            print(f"❌ Charge NOT ACTIVE. Status: {node.get('status')}", flush=True)
+            frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?error=failed"
+            
+    except Exception as e:
+        print(f"❌ Callback Error: {e}", flush=True)
+        db.rollback()
+        frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?error=server_error"
 
     return RedirectResponse(url=frontend_url)
 
