@@ -11,27 +11,37 @@ export default function Billing() {
 
   const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
-  // 🔥 URL se shop domain nikalo
+  // 🔥 UPDATED: Shop domain nikalne ka sahi tarika
   const getShopDomain = () => {
+    // 1. Pehle URL search params mein dhundo (?shop=...)
     const params = new URLSearchParams(window.location.search);
-    return params.get("shop") || "";
+    let shop = params.get("shop");
+    
+    // 2. Agar nahi mila, toh Shopify Admin URL se nikaalo
+    // URL aisa hota hai: /store/test-plan-2bbqwtmx/apps/...
+    if (!shop) {
+      const pathMatch = window.location.pathname.match(/\/store\/([^\/]+)/);
+      if (pathMatch && pathMatch[1]) {
+        shop = `${pathMatch[1]}.myshopify.com`;
+      }
+    }
+    
+    return shop || "";
   };
 
   const handleUpgrade = async () => {
     const shop = getShopDomain();
     if (!shop) {
-      setErrorMsg("Shop domain not found in URL. Please reload from Shopify admin.");
+      setErrorMsg("Shop domain not found. Please open the app from your Shopify admin dashboard.");
       return;
     }
 
     setLoading(true);
     setErrorMsg("");
     try {
-      // 🔥 Shopify payment page URL request karo
       const res = await axios.post(`${API_URL}/billing/upgrade?shop=${shop}`);
       
       if (res.data?.confirmation_url) {
-        // 🔥 Payment page pe redirect (Shopify App Bridge force karta hai "_top")
         window.open(res.data.confirmation_url, "_top");
       } else {
         setErrorMsg("No payment URL returned from Shopify.");
@@ -45,7 +55,10 @@ export default function Billing() {
 
   const handleDowngrade = async () => {
     const shop = getShopDomain();
-    if (!shop) return;
+    if (!shop) {
+      setErrorMsg("Shop domain not found.");
+      return;
+    }
 
     if (!window.confirm("Are you sure you want to downgrade to Basic?")) return;
 
