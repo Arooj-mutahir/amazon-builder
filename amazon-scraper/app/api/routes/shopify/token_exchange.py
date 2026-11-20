@@ -48,4 +48,4 @@ async def token_exchange(payload: TokenExchangeRequest, db: Session = Depends(ge
     db.commit()
     db.refresh(store)
     
-    return {"success": True, "message": "Store saved successfully", "store_id": store.id}
+    return {"success": True, "store_id": store.id, "shop_domain": store.shop_domain}

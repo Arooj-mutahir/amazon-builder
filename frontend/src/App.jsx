@@ -2,8 +2,6 @@
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
 import { AlertTriangle, Sparkles } from 'lucide-react'; 
-import { useAppBridge } from "@shopify/app-bridge-react";
-import { getSessionToken } from "@shopify/app-bridge/utilities";
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -13,8 +11,8 @@ import Billing from './components/Billing';
 import { usePlan } from './hooks/usePlan'; 
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
+const API_URL = `${BACKEND_URL}/api/shopify`; // ✅ Direct set kiya
 
-// ✅ Error Boundary
 class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -42,7 +40,6 @@ class ErrorBoundary extends Component {
 
 export default function App() {
   const { isAdvance, isBasic, plan, status } = usePlan();
-  const app = useAppBridge(); // 🔥 App Bridge Initialize
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
@@ -68,30 +65,40 @@ export default function App() {
   const [collections, setCollections] = useState([]);
   const [selectedCollections, setSelectedCollections] = useState([]);
 
-  const API_URL = import.meta.env.VITE_API_URL || `${BACKEND_URL}/api/shopify`;
-
-  // 🔥 NAYA: ID Token Exchange aur Store Save Logic
+  // 🔥 TOKEN EXCHANGE LOGIC
   useEffect(() => {
     const exchangeTokenAndFetchStores = async () => {
-      if (!app) return;
-      
       try {
-        // 1. App Bridge se ID Token nikalo
-        const sessionToken = await getSessionToken(app);
         const urlParams = new URLSearchParams(window.location.search);
         const shopFromUrl = urlParams.get('shop');
 
-        // 2. Backend ko token bhe kar store save karwao
-        if (sessionToken && shopFromUrl) {
-          console.log("Exchanging token for:", shopFromUrl);
+        if (!shopFromUrl) {
+          console.warn("Shopify shop parameter nahi mila.");
+          return;
+        }
+
+        // App Bridge se ID token nikalne ki koshish
+        let sessionToken = null;
+        if (window.shopify && window.shopify.idToken) {
+          try {
+            sessionToken = await window.shopify.idToken();
+          } catch (e) {
+            console.error("ID Token error:", e);
+          }
+        }
+
+        if (sessionToken) {
+          console.log("🔄 Sending token to backend for:", shopFromUrl);
           await axios.post(`${API_URL}/token-exchange`, {
             shop: shopFromUrl,
             id_token: sessionToken
           });
-          console.log("✅ Store saved to database");
+          console.log("✅ Store saved to database via token exchange.");
+        } else {
+          console.warn("⚠️ ID Token nahi mila. App Bridge check karein.");
         }
 
-        // 3. Ab stores fetch karo (ab naya store DB mein hoga)
+        // Ab stores fetch karo
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
 
@@ -101,12 +108,12 @@ export default function App() {
           setSelectedStoreId(foundStore.id);
         }
       } catch (err) {
-        console.error("Failed to exchange token or fetch stores", err);
+        console.error("❌ Token exchange / fetch stores fail:", err);
       }
     };
     
     exchangeTokenAndFetchStores();
-  }, [app, API_URL]);
+  }, []);
 
   // URL-based initial tab detection
   useEffect(() => {
@@ -145,7 +152,7 @@ export default function App() {
     };
     fetchCollections();
     return () => { cancelled = true; };
-  }, [selectedStore, API_URL]);
+  }, [selectedStore]);
 
   // Fetch auto-sync status
   useEffect(() => {
@@ -160,7 +167,7 @@ export default function App() {
       }
     };
     fetchAutoSyncStatus();
-  }, [API_URL, selectedStoreId]);
+  }, [selectedStoreId]);
 
   const handleToggleAutoSync = useCallback(async () => {
     if (isAutoSyncEnabled === null) return;
@@ -176,17 +183,11 @@ export default function App() {
       setIsAutoSyncEnabled(!newState);
       alert("Failed to update Auto-Sync setting.");
     }
-  }, [isAutoSyncEnabled, API_URL, selectedStoreId]);
+  }, [isAutoSyncEnabled, selectedStoreId]);
 
   const handleModalImport = useCallback(async (importUrl) => {
-    if (!importUrl) {
-      setError("Please enter a valid URL");
-      return;
-    }
-    if (!selectedStore) {
-      setError("Please connect a Shopify store first");
-      return;
-    }
+    if (!importUrl) { setError("Please enter a valid URL"); return; }
+    if (!selectedStore) { setError("Please connect a Shopify store first"); return; }
 
     setLoading(true);
     setError('');
@@ -216,7 +217,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [API_URL, selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections, isAutoSyncEnabled]);
+  }, [selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections, isAutoSyncEnabled]);
 
   const handleBackFromSettings = useCallback(() => {
     setMarkup(localStorage.getItem('global_markup') || '0');
@@ -237,12 +238,7 @@ export default function App() {
     }
 
     setActiveTab(tab);
-    const pathMap = {
-      dashboard: '/',
-      'manual-sync': '/manual-sync',
-      settings: '/settings',
-      billing: '/billing'
-    };
+    const pathMap = { dashboard: '/', 'manual-sync': '/manual-sync', settings: '/settings', billing: '/billing' };
     window.history.pushState({}, '', pathMap[tab] || '/');
   }, [isAdvance]);
 
@@ -258,7 +254,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            
             <span className={`px-3 py-1.5 rounded-full text-xs font-bold ${
               isAdvance ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
             }`}>
@@ -267,19 +262,13 @@ export default function App() {
             </span>
 
             {isBasic && (
-              <button
-                onClick={() => handleTabChange('billing')}
-                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 shadow-sm hover:opacity-90 transition"
-              >
+              <button onClick={() => handleTabChange('billing')} className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 shadow-sm hover:opacity-90 transition">
                 <Sparkles size={16} /> Upgrade
               </button>
             )}
 
             {isAdvance && (
-              <button
-                onClick={() => handleTabChange('manual-sync')}
-                className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm"
-              >
+              <button onClick={() => handleTabChange('manual-sync')} className="border border-gray-300 bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
                 View Sync Logs
               </button>
             )}
@@ -289,65 +278,31 @@ export default function App() {
         <div className="p-8">
           {activeTab === 'dashboard' && (
             <DashboardView
-              url={url}
-              setUrl={setUrl}
-              loading={loading}
-              onSubmit={handleModalImport}
-              isAutoSyncEnabled={isAutoSyncEnabled}
-              onToggleAutoSync={handleToggleAutoSync}
-              collections={collections}
-              selectedCollections={selectedCollections}
-              setSelectedCollections={setSelectedCollections}
-              markup={markup}
-              markupType={markupType}
-              extraPercent={extraPercent}
-              taxRate={taxRate}
-              API_URL={API_URL}
-              selectedStoreId={selectedStoreId}
+              url={url} setUrl={setUrl} loading={loading} onSubmit={handleModalImport}
+              isAutoSyncEnabled={isAutoSyncEnabled} onToggleAutoSync={handleToggleAutoSync}
+              collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
+              markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+              API_URL={API_URL} selectedStoreId={selectedStoreId}
             />
           )}
 
           {activeTab === 'manual-sync' && isAdvance && ( 
-            <ManualSync 
-              API_URL={API_URL} 
-              selectedStoreId={selectedStoreId}
-              isAutoSyncEnabled={isAutoSyncEnabled}
-              onToggleAutoSync={handleToggleAutoSync}
-            />
+            <ManualSync API_URL={API_URL} selectedStoreId={selectedStoreId} isAutoSyncEnabled={isAutoSyncEnabled} onToggleAutoSync={handleToggleAutoSync} />
           )}
 
           {activeTab === 'settings' && (
-            <Settings 
-              onBack={handleBackFromSettings} 
-              storeId={selectedStoreId} 
-              API_URL={API_URL}
-              shopDomain={selectedStore}
-            />
+            <Settings onBack={handleBackFromSettings} storeId={selectedStoreId} API_URL={API_URL} shopDomain={selectedStore} />
           )}
 
-          {activeTab === 'billing' && (
-            <Billing />
-          )}
+          {activeTab === 'billing' && <Billing />}
         </div>
       </main>
 
       <ImportModal
-        key={modalKey} 
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onImport={handleModalImport}
-        loading={loading}
-        error={error}
-        markup={markup}
-        markupType={markupType}
-        extraPercent={extraPercent}
-        taxRate={taxRate}
-        comparePriceMarkup={comparePriceMarkup}
-        collections={collections}
-        selectedCollections={selectedCollections}
-        setSelectedCollections={setSelectedCollections}
-        isAutoSyncEnabled={isAutoSyncEnabled}
-        onToggleAutoSync={handleToggleAutoSync}
+        key={modalKey} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onImport={handleModalImport}
+        loading={loading} error={error} markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
+        comparePriceMarkup={comparePriceMarkup} collections={collections} selectedCollections={selectedCollections}
+        setSelectedCollections={setSelectedCollections} isAutoSyncEnabled={isAutoSyncEnabled} onToggleAutoSync={handleToggleAutoSync}
       />
     </div>
   );
