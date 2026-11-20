@@ -14,6 +14,9 @@ export default function DashboardView({
   // ✅ Data fetch ke liye props
   API_URL,
   selectedStoreId,
+
+  // 🔥 NAYA: plan prop
+  isAdvance,
 }) {
   const [products, setProducts] = useState([]);
   const [fetchingProducts, setFetchingProducts] = useState(true);
@@ -55,6 +58,13 @@ export default function DashboardView({
     fetchAllProducts();
   }, [API_URL, selectedStoreId]);
 
+  // 🔥 Auto-Sync status sirf Advance user ke liye fetch karo
+  useEffect(() => {
+    if (!isAdvance) return;
+    // agar future mein auto-sync status API call add karo, yahan guard hai
+    // fetchAutoSyncStatus();
+  }, [isAdvance]);
+
   const handleCollectionToggle = (id) => {
     if (selectedCollections.includes(id)) {
       setSelectedCollections(selectedCollections.filter(cId => cId !== id));
@@ -89,11 +99,11 @@ export default function DashboardView({
   return (
     <div className="space-y-6">
       
-      {/* ✅ 1. INLINE IMPORT FORM (Ab Kaam Karega) */}
+      {/* ✅ 1. INLINE IMPORT FORM */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
         <form onSubmit={handleDashboardImport} className="space-y-5">
           
-          {/* URL Section (Real Input) */}
+          {/* URL Section */}
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-2">
               Amazon Product URL or ASIN(s)
@@ -109,7 +119,7 @@ export default function DashboardView({
             <p className="text-xs text-gray-500 mt-1">Supports single URLs or comma-separated ASINs.</p>
           </div>
 
-          {/* Collections Section (Working) */}
+          {/* Collections Section */}
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
             <CollectionSelector 
               collections={collections}
@@ -120,25 +130,27 @@ export default function DashboardView({
             />
           </div>
 
-          {/* Auto-Sync Section (Working Toggle) */}
-          <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 flex justify-between items-center">
-            <div>
-              <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
-              <p className="text-xs text-gray-500">Price & stock tracking</p>
+          {/* 🔥 Auto-Sync Section — SIRF ADVANCE KE LIYE */}
+          {isAdvance && (
+            <div className="w-full bg-gray-50 border border-gray-200 rounded-lg p-4 flex justify-between items-center">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Auto-Sync</p>
+                <p className="text-xs text-gray-500">Price & stock tracking</p>
+              </div>
+              <button 
+                type="button"
+                onClick={onToggleAutoSync}
+                disabled={loading}
+                className={`w-10 h-5 rounded-full relative transition-colors ${
+                  isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
+                }`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                  isAutoSyncEnabled ? 'left-5' : 'left-0.5'
+                }`}></div>
+              </button>
             </div>
-            <button 
-              type="button"
-              onClick={onToggleAutoSync}
-              disabled={loading}
-              className={`w-10 h-5 rounded-full relative transition-colors ${
-                isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
-              }`}
-            >
-              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                isAutoSyncEnabled ? 'left-5' : 'left-0.5'
-              }`}></div>
-            </button>
-          </div>
+          )}
 
           {/* Pricing Rule Section */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex justify-between items-center text-sm">
@@ -146,7 +158,7 @@ export default function DashboardView({
             <span className="font-semibold text-gray-900">{getPricingRuleText()}</span>
           </div>
 
-          {/* Import Button (Working Submit) */}
+          {/* Import Button */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button 
               type="submit"
@@ -265,7 +277,10 @@ export default function DashboardView({
                           </div>
                           <div>
                             <p className="font-medium text-gray-900 text-sm max-w-[250px] truncate" title={title}>{title}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">Auto-Sync {product.auto_sync !== false ? 'ON' : 'OFF'}</p>
+                            {/* 🔥 Auto-Sync status sirf Advance user ko dikhao */}
+                            {isAdvance && (
+                              <p className="text-xs text-gray-500 mt-0.5">Auto-Sync {product.auto_sync !== false ? 'ON' : 'OFF'}</p>
+                            )}
                           </div>
                         </div>
                       </td>

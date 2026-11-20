@@ -11,7 +11,7 @@ import Billing from './components/Billing';
 import { usePlan } from './hooks/usePlan'; 
 
 const BACKEND_URL = "https://amazon-builder-production.up.railway.app";
-const API_URL = `${BACKEND_URL}/api/shopify`; // ✅ Direct set kiya
+const API_URL = `${BACKEND_URL}/api/shopify`;
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -77,7 +77,6 @@ export default function App() {
           return;
         }
 
-        // App Bridge se ID token nikalne ki koshish
         let sessionToken = null;
         if (window.shopify && window.shopify.idToken) {
           try {
@@ -98,7 +97,6 @@ export default function App() {
           console.warn("⚠️ ID Token nahi mila. App Bridge check karein.");
         }
 
-        // Ab stores fetch karo
         const res = await axios.get(`${API_URL}/stores`);
         setStores(res.data);
 
@@ -115,14 +113,24 @@ export default function App() {
     exchangeTokenAndFetchStores();
   }, []);
 
-  // URL-based initial tab detection
+  // ✅ FIX #1: URL-based initial tab detection — isAdvance null/undefined hone par wait karo
   useEffect(() => {
+    // Plan load hone tak wait — warna Advance user bhi galti se redirect ho sakta hai
+    if (isAdvance === undefined || isAdvance === null) return;
+
     const path = window.location.pathname;
     if (path.includes('settings')) setActiveTab('settings');
-    else if (path.includes('manual-sync')) setActiveTab('manual-sync');
+    else if (path.includes('manual-sync')) {
+      if (!isAdvance) {
+        setActiveTab('billing');
+        window.history.replaceState({}, '', '/billing'); // pushState → replaceState
+      } else {
+        setActiveTab('manual-sync');
+      }
+    }
     else if (path.includes('billing')) setActiveTab('billing');
     else setActiveTab('dashboard');
-  }, []);
+  }, [isAdvance]);
 
   // Keep selectedStoreId in sync
   useEffect(() => {
@@ -154,10 +162,14 @@ export default function App() {
     return () => { cancelled = true; };
   }, [selectedStore]);
 
-  // Fetch auto-sync status
+  // ✅ FIX #2: Auto-sync status sirf Advance user ke liye fetch karo
   useEffect(() => {
     const fetchAutoSyncStatus = async () => {
       if (!selectedStoreId) return;
+      if (!isAdvance) {
+        setIsAutoSyncEnabled(false); // Basic user ke liye default off
+        return;
+      }
       try {
         const res = await axios.get(`${API_URL}/auto-sync/status?store_id=${selectedStoreId}`);
         setIsAutoSyncEnabled(res.data.enabled);
@@ -167,9 +179,14 @@ export default function App() {
       }
     };
     fetchAutoSyncStatus();
-  }, [selectedStoreId]);
+  }, [selectedStoreId, isAdvance]);
 
+  // ✅ FIX #3: handleToggleAutoSync par bhi plan guard
   const handleToggleAutoSync = useCallback(async () => {
+    if (!isAdvance) {
+      alert("Auto-Sync is an Advance Plan feature. Please upgrade.");
+      return;
+    }
     if (isAutoSyncEnabled === null) return;
     const newState = !isAutoSyncEnabled;
     setIsAutoSyncEnabled(newState);
@@ -183,7 +200,7 @@ export default function App() {
       setIsAutoSyncEnabled(!newState);
       alert("Failed to update Auto-Sync setting.");
     }
-  }, [isAutoSyncEnabled, selectedStoreId]);
+  }, [isAdvance, isAutoSyncEnabled, selectedStoreId]);
 
   const handleModalImport = useCallback(async (importUrl) => {
     if (!importUrl) { setError("Please enter a valid URL"); return; }
@@ -203,7 +220,8 @@ export default function App() {
         tax_rate: parseFloat(taxRate),
         compare_price_markup: parseFloat(comparePriceMarkup),
         collection_ids: selectedCollections,
-        auto_sync: isAutoSyncEnabled
+        // Basic user ke liye auto_sync always false
+        auto_sync: isAdvance ? isAutoSyncEnabled : false
       });
 
       setSuccessMsg(`✅ ${res.data.message}. Check backend terminal.`);
@@ -217,7 +235,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections, isAutoSyncEnabled]);
+  }, [selectedStore, markup, markupType, extraPercent, taxRate, comparePriceMarkup, selectedCollections, isAutoSyncEnabled, isAdvance]);
 
   const handleBackFromSettings = useCallback(() => {
     setMarkup(localStorage.getItem('global_markup') || '0');
@@ -229,11 +247,12 @@ export default function App() {
     window.history.pushState({}, '', '/');
   }, []);
 
+  // ✅ handleTabChange — isAdvance null check + replaceState
   const handleTabChange = useCallback((tab) => {
     if (tab === 'manual-sync' && !isAdvance) {
       alert("Manual Sync is an Advance Plan feature. Please upgrade.");
       setActiveTab('billing');
-      window.history.pushState({}, '', '/billing');
+      window.history.replaceState({}, '', '/billing');
       return;
     }
 
@@ -283,6 +302,7 @@ export default function App() {
               collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
               markup={markup} markupType={markupType} extraPercent={extraPercent} taxRate={taxRate}
               API_URL={API_URL} selectedStoreId={selectedStoreId}
+              isAdvance={isAdvance}
             />
           )}
 
