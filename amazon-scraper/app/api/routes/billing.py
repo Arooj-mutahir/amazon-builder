@@ -35,8 +35,10 @@ async def upgrade(
     if store.plan == "advance" and store.plan_status == "active":
         raise HTTPException(400, "Already on Advance plan")
 
-    # 🔥 Return URL (Shopify payment ke baad yahan redirect hoga)
-    return_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?success=true"
+    # 🔥 IMPORTANT: Callback URL (Bina charge_id ke, kyunki wo abhi generate nahi hui)
+    # Shopify jab return_url par bhejega, toh wo automatically URL mein 
+    # charge_id add kar dega (GraphQL API ka feature hai).
+    return_url = f"https://amazon-builder-production.up.railway.app/api/shopify/billing/callback?shop={shop}"
 
     mutation = """
     mutation CreateSubscription($name: String!, $returnUrl: URL!, $test: Boolean, $lineItems: [AppSubscriptionLineItemInput!]!) {
@@ -50,7 +52,7 @@ async def upgrade(
     variables = {
         "name": "Advance Plan",
         "returnUrl": return_url,
-        "test": True,  # 🔥 Test mode (Production mein False karna)
+        "test": True,
         "lineItems": [{
             "plan": {
                 "appRecurringPricingDetails": {
@@ -61,7 +63,9 @@ async def upgrade(
         }]
     }
 
+    print(f"📤 Sending upgrade request for {shop}...", flush=True)
     result = await shopify_graphql(store.shop_domain, store.access_token, mutation, variables)
+    print(f"📥 Shopify Billing Response: {result}", flush=True)
     
     if "errors" in result or result.get("data", {}).get("appSubscriptionCreate", {}).get("userErrors"):
         raise HTTPException(status_code=400, detail=str(result))
@@ -70,7 +74,19 @@ async def upgrade(
     return {"confirmation_url": confirmation_url}
 
 @router.get("/callback")
-async def billing_callback(charge_id: str, shop: str, db: Session = Depends(get_db)):
+async def billing_callback(
+    charge_id: str = Query(None), # Shopify charge_id bhejta hai (agar success ho)
+    shop: str = Query(...), 
+    db: Session = Depends(get_db)
+):
+    print(f"🔙 Billing callback received for {shop} | Charge ID: {charge_id}", flush=True)
+    
+    # Agar user ne payment cancel kar diya aur charge_id nahi aayi
+    if not charge_id:
+        print("⚠️ No charge_id found in callback URL. User may have cancelled.", flush=True)
+        frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?error=cancelled"
+        return RedirectResponse(url=frontend_url)
+
     store = get_store_by_shop(shop, db)
 
     query = """
@@ -87,15 +103,19 @@ async def billing_callback(charge_id: str, shop: str, db: Session = Depends(get_
     node = result.get("data", {}).get("node", {})
     
     if node.get("status") == "ACTIVE":
+        print(f"✅ Charge ACTIVE! Upgrading store {shop} to Advance.", flush=True)
         store.plan = "advance"
         store.plan_status = "active"
         store.plan_started_at = datetime.utcnow()
         store.plan_expires_at = datetime.utcnow() + timedelta(days=30)
         store.auto_sync_enabled = True
         db.commit()
-        
-    # Wapas frontend pe redirect karo
-    return RedirectResponse(url=f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?success=true")
+        frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?success=true"
+    else:
+        print(f"❌ Charge NOT ACTIVE. Status: {node.get('status')}", flush=True)
+        frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?error=failed"
+
+    return RedirectResponse(url=frontend_url)
 
 @router.post("/downgrade")
 def downgrade(

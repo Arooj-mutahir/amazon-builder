@@ -1,5 +1,5 @@
 // src/components/Billing.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { usePlan } from "../hooks/usePlan";
 import { Sparkles, CheckCircle2, Loader2, TrendingDown } from "lucide-react";
@@ -8,17 +8,29 @@ export default function Billing() {
   const { isAdvance, refresh } = usePlan();
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
 
   const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/shopify`;
 
+  // 🔥 FIX: Payment ke baad redirect hone par UI update karo
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("success") === "true") {
+      setSuccessMsg("🎉 Payment successful! You are now on the Advance Plan.");
+      refresh(); // Plan state update
+      // URL se ?success=true hatao taaki page refresh pe wapas na dikhe
+      window.history.replaceState({}, "", window.location.pathname + window.location.search.replace(/[?&]success=true/, "").replace(/^&/, "?"));
+    } else if (params.get("error")) {
+      setErrorMsg("Payment failed or cancelled. Please try again.");
+      window.history.replaceState({}, "", window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, "").replace(/^&/, "?"));
+    }
+  }, [refresh]);
+
   // 🔥 UPDATED: Shop domain nikalne ka sahi tarika
   const getShopDomain = () => {
-    // 1. Pehle URL search params mein dhundo (?shop=...)
     const params = new URLSearchParams(window.location.search);
     let shop = params.get("shop");
     
-    // 2. Agar nahi mila, toh Shopify Admin URL se nikaalo
-    // URL aisa hota hai: /store/test-plan-2bbqwtmx/apps/...
     if (!shop) {
       const pathMatch = window.location.pathname.match(/\/store\/([^\/]+)/);
       if (pathMatch && pathMatch[1]) {
@@ -38,10 +50,12 @@ export default function Billing() {
 
     setLoading(true);
     setErrorMsg("");
+    setSuccessMsg("");
     try {
       const res = await axios.post(`${API_URL}/billing/upgrade?shop=${shop}`);
       
       if (res.data?.confirmation_url) {
+        // Payment page pe redirect
         window.open(res.data.confirmation_url, "_top");
       } else {
         setErrorMsg("No payment URL returned from Shopify.");
@@ -60,10 +74,11 @@ export default function Billing() {
       return;
     }
 
-    if (!window.confirm("Are you sure you want to downgrade to Basic?")) return;
+    if (!window.confirm("Are you sure you want to downgrade to Basic? You will lose Advance features.")) return;
 
     setLoading(true);
     setErrorMsg("");
+    setSuccessMsg("");
     try {
       await axios.post(`${API_URL}/billing/downgrade?shop=${shop}`);
       await refresh();
@@ -88,6 +103,12 @@ export default function Billing() {
         <li className="flex items-center gap-2"><CheckCircle2 size={18} className="text-green-500" /> Compare At Price Settings</li>
         <li className="flex items-center gap-2"><CheckCircle2 size={18} className="text-green-500" /> Size Chart & Metafields</li>
       </ul>
+
+      {successMsg && (
+        <div className="mb-4 p-3 bg-green-50 text-green-700 text-sm rounded-lg border border-green-200 text-left">
+          {successMsg}
+        </div>
+      )}
 
       {errorMsg && (
         <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 text-left">

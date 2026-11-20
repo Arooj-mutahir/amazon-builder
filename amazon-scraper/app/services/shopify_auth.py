@@ -8,11 +8,13 @@ import hashlib
 import hmac
 import logging
 import time
+from datetime import datetime, timedelta
 from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
 import jwt
+from sqlalchemy.orm import Session
 
 from app.config import settings
 
@@ -29,7 +31,6 @@ def build_auth_url(shop: str, state: str = "default") -> str:
         "scope": settings.SHOPIFY_SCOPES,
         "redirect_uri": settings.SHOPIFY_REDIRECT_URI,
         "state": state,
-        
     }
     return f"https://{shop}/admin/oauth/authorize?{urlencode(params)}"
 
@@ -102,7 +103,6 @@ def verify_id_token(token: str) -> dict:
         raise ValueError("Token expired")
 
     except jwt.InvalidTokenError as e:
-        # Debugging ke liye unverified payload log karo
         try:
             unverified = jwt.decode(token, options={"verify_signature": False})
             logger.warning(
@@ -154,6 +154,7 @@ async def exchange_code_for_token(shop: str, code: str):
         logger.error(f"Token exchange fail for {shop}: {e}")
         return None
 
+
 # ============================================
 # TOKEN EXCHANGE (ID token → Offline access token)
 # ============================================
@@ -175,7 +176,7 @@ async def exchange_id_token_for_offline_token(
         "requested_token_type": (
             "urn:shopify:params:oauth:token-type:offline-access-token"
         ),
-        "expiring": "1",
+        "expiring": 1, # 🔥 Ab yeh active hai
     }
 
     try:
@@ -215,11 +216,6 @@ async def refresh_shopify_token(
 ) -> Optional[dict]:
     """
     Refresh token se naya access token le kar aata hai.
-    
-    Returns:
-        dict with keys: access_token, scope, expires_in, 
-                        refresh_token, refresh_token_expires_in
-        None agar refresh fail ho jaye.
     """
     if not refresh_token:
         logger.warning(f"No refresh_token provided for {shop_domain}")
@@ -269,3 +265,48 @@ async def refresh_shopify_token(
     except Exception as e:
         logger.error(f"Token refresh error for {shop_domain}: {e}")
         return None
+
+
+# ============================================
+# 🔥 NAYA: AUTO TOKEN GETTER (Expiry check + Auto Refresh)
+# ============================================
+async def get_valid_access_token(store, db: Session, force_refresh: bool = False) -> str:
+    """
+    Hamesha ek valid access token return karta hai.
+    Agar token expire ho gaya hai toh khud refresh kar leta hai.
+    """
+    if not store.access_token:
+        raise Exception("Store has no access token. Please reinstall the app.")
+
+    # Check expiry (5 min buffer)
+    needs_refresh = force_refresh
+    if store.expires_at:
+        if datetime.utcnow() + timedelta(minutes=5) >= store.expires_at:
+            needs_refresh = True
+
+    if not needs_refresh:
+        return store.access_token
+
+    if not store.refresh_token:
+        logger.warning(f"⚠️ Token expired but no refresh_token for {store.shop_domain}")
+        return store.access_token # Return old to let API call fail gracefully
+
+    logger.info(f"🔄 Refreshing access token for {store.shop_domain}...")
+    new_data = await refresh_shopify_token(store.shop_domain, store.refresh_token)
+
+    if new_data and new_data.get("access_token"):
+        store.access_token = new_data["access_token"]
+        
+        # Refresh token change ho sakta hai, toh update karo
+        if new_data.get("refresh_token"):
+            store.refresh_token = new_data["refresh_token"]
+            
+        if new_data.get("expires_in"):
+            store.expires_at = datetime.utcnow() + timedelta(seconds=int(new_data["expires_in"]))
+            
+        db.commit()
+        db.refresh(store)
+        return store.access_token
+    else:
+        logger.error(f"❌ Failed to refresh token for {store.shop_domain}")
+        return store.access_token
