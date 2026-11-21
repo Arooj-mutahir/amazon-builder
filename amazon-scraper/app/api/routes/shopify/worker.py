@@ -142,7 +142,7 @@ async def _background_fetch_and_push(
             print("❌ Store disappeared during scraping", flush=True)
             return
 
-        # 🔥 RE-CHECK LIMIT (Kyunki scraping ke dauran koi aur import kar sakta hai)
+        # 🔥 RE-CHECK LIMIT
         if (store_fresh.plan or "").lower() == "basic":
             limit = 1000
         else:
@@ -181,10 +181,16 @@ async def _background_fetch_and_push(
     except Exception as e:
         print(f"\n❌ SAVE CRASHED: {e}", flush=True)
         traceback.print_exc()
-        db2.rollback()
+        try:
+            db2.rollback()
+        except:
+            pass
     finally:
-        if db2.is_active:
-            db2.close()
+        try:
+            if db2.is_active:
+                db2.close()
+        except:
+            pass  # Already closed by process_multi_variant
 
 # Scheduler Setup
 scheduler = AsyncIOScheduler()
