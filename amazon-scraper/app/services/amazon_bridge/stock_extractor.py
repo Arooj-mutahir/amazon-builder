@@ -16,37 +16,34 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         return False, 0
     print("✅ [DEBUG] 'Other sellers' check pass", flush=True)
 
-    # 2. Check if "add-to-cart-button" exists
-    if 'id="add-to-cart-button"' in html_lower or "id='add-to-cart-button'" in html_lower:
+    # 2. Button ko dhundhein
+    button_pattern = r'id=["\']add-to-cart-button["\']'
+    match = re.search(button_pattern, html_lower)
+    
+    if match:
         print("✅ [DEBUG] 'add-to-cart-button' ID HTML mein mil gayi.", flush=True)
         
-        btn_pos = html_lower.find('add-to-cart-button')
+        # 🔥 FIX: Button ke PEHLE ke 500 characters check karein (parent div ke liye)
+        # Amazon button ko ek div ke andar rakhta hai, aur hidden class us div par hoti hai
+        start_idx = max(0, match.start() - 500)
+        context_before = html_lower[start_idx:match.start()]
         
-        # 🔥 FIX 1: Context range badhayein (4000 characters pehle tak dekhein)
-        context_start = max(0, btn_pos - 4000)
-        context = html_lower[context_start:btn_pos]
+        # Agar button ke PEHLE 'display: none' ya 'aok-hidden' hai, toh button hidden hai
+        if 'display: none' in context_before or 'aok-hidden' in context_before or 'a-hidden' in context_before:
+            print("❌ [DEBUG] Button hidden hai (parent div mein display:none/aok-hidden mila) -> False, 0", flush=True)
+            return False, 0
         
-        # 🔥 FIX 2: Check hidden classes
-        if 'display: none' in context or 'aok-hidden' in context or 'a-hidden' in context:
-            print("❌ [DEBUG] Button 'display: none' ya 'hidden' class mein hai -> False, 0", flush=True)
-            return False, 0
-            
-        # 🔥 FIX 3: Check Prime Exclusive (Screenshot mein yahi dikh raha tha)
-        if 'prime exclusive' in context or 'join prime' in context:
-            print("❌ [DEBUG] Prime Exclusive product mila -> False, 0", flush=True)
-            return False, 0
-
-        # 🔥 FIX 4: Check karein ki button ke baad "Add to Cart" ka text hai ya "See All Buying Options"
-        # Agar "See All Buying Options" hai, toh button kaam nahi karega
-        post_context = html_lower[btn_pos:btn_pos+2000]
-        if 'see all buying options' in post_context:
+        # Agar button ke BAAD 'See All Buying Options' hai, toh button kaam nahi karega
+        end_idx = min(len(html_lower), match.end() + 500)
+        context_after = html_lower[match.end():end_idx]
+        if 'see all buying options' in context_after:
             print("❌ [DEBUG] Button ke baad 'See All Buying Options' mila -> False, 0", flush=True)
             return False, 0
             
-        print("✅ [DEBUG] Button VISIBLE hai (Hidden nahi hai) -> True, 100", flush=True)
+        print("✅ [DEBUG] Button VISIBLE hai -> True, 100", flush=True)
         return True, 100
     else:
-        print("⚠️ [DEBUG] 'add-to-cart-button' ID nahi mili HTML mein.", flush=True)
+        print("⚠️ [DEBUG] 'add-to-cart-button' ID nahi mili.", flush=True)
 
     # Fallback Check
     if 'primary-availability-message' in html_lower and 'in stock' in html_lower:
