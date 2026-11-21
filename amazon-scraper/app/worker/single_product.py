@@ -18,11 +18,18 @@ async def process_single_variant(
     parent_asin_upper = main_data["asin"].upper()
     existing = db.query(Product).filter(Product.asin == parent_asin_upper).first()
     
-    parent_available = _get_availability(main_data)
-    parent_stock_raw = main_data.get("stock_qty")
-    parent_stock_qty = _resolve_stock(parent_available, parent_stock_raw, default_stock_qty)
-    parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
-    parent_stock = parent_stock_qty or 0
+    # 🔥 NAYA LOGIC: Add to Cart button check
+    is_add_to_cart_visible = main_data.get("is_add_to_cart_visible", False)
+
+    if is_add_to_cart_visible:
+        parent_available = True
+        parent_stock_qty = 100
+    else:
+        parent_available = False
+        parent_stock_qty = 0
+
+    parent_in_stock = parent_available
+    parent_stock = parent_stock_qty
     availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
     # ==========================================

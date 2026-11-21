@@ -57,10 +57,18 @@ async def process_multi_variant(
         # --- Parent Product Save ---
         new_product = db_save.query(Product).filter(Product.asin == parent_asin_upper).first()
         
-        parent_available = _get_availability(main_data)
-        parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_qty"), default_stock_qty)
-        parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
-        parent_stock = parent_stock_qty or 0
+        # 🔥 NAYA LOGIC: Add to Cart button check
+        is_add_to_cart_visible = main_data.get("is_add_to_cart_visible", False)
+
+        if is_add_to_cart_visible:
+            parent_available = True
+            parent_stock_qty = 100
+        else:
+            parent_available = False
+            parent_stock_qty = 0
+
+        parent_in_stock = parent_available
+        parent_stock = parent_stock_qty
         availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
         if not new_product:
@@ -116,8 +124,15 @@ async def process_multi_variant(
                 v_amazon_price = v.get("price") or main_data.get("price") or 0.0
                 v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
                 v_images = v.get("images") or []
-                v_resolved = _resolve_stock(v.get("in_stock"), v.get("stock_qty"), default_stock_qty) or 0
-                v_in_stock = v_resolved > 0
+
+                # 🔥 NAYA LOGIC (Child variants ke liye): Parent ka hi flag use karenge
+                if is_add_to_cart_visible:
+                    v_resolved = 100
+                    v_in_stock = True
+                else:
+                    v_resolved = 0
+                    v_in_stock = False
+
                 v_avail = "In Stock" if v_in_stock else "Out of Stock"
                 v_title = f"{main_data.get('title', '')} - {v.get('title', '')}" if v.get('title') else main_data.get("title", "")
 
@@ -181,9 +196,6 @@ async def process_multi_variant(
 
     shopify_id = None
     try:
-        # Yahan hum Shopify API call karenge. 
-        # Agar 68 variants ek saath fail ho rahe hain, toh hum isko chunks mein bhejenge.
-        # Lekin abhi ke liye direct call karte hain.
         result = await create_shopify_product_with_variants(
             shop=shop_domain, access_token=token,
             product_data=shopify_payload, variants_raw=clean_variants,
