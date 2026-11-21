@@ -16,25 +16,31 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         return False, 0
     print("✅ [DEBUG] 'Other sellers' check pass", flush=True)
 
-    # 2. Check if "add-to-cart-button" exists in HTML at all
-    # Hum strict regex use nahi karenge, bas check karenge ki ID maujood hai ya nahi
+    # 2. Check if "add-to-cart-button" exists
     if 'id="add-to-cart-button"' in html_lower or "id='add-to-cart-button'" in html_lower:
         print("✅ [DEBUG] 'add-to-cart-button' ID HTML mein mil gayi.", flush=True)
         
-        # 3. Check if the button is hidden
-        # Hum button ke aas-paas ka thoda context nikalenge
-        # (Kyunki button kabhi <span> ke andar hota hai, kabhi <div> ke andar)
-        
-        # Button ki position dhundhein
         btn_pos = html_lower.find('add-to-cart-button')
         
-        # Uske pehle ke 1500 characters ka context lein (jahan parent div ho sakta hai)
-        context_start = max(0, btn_pos - 1500)
+        # 🔥 FIX 1: Context range badhayein (4000 characters pehle tak dekhein)
+        context_start = max(0, btn_pos - 4000)
         context = html_lower[context_start:btn_pos]
         
-        # Agar parent div mein display:none ya aok-hidden hai, toh button hidden hai
+        # 🔥 FIX 2: Check hidden classes
         if 'display: none' in context or 'aok-hidden' in context or 'a-hidden' in context:
             print("❌ [DEBUG] Button 'display: none' ya 'hidden' class mein hai -> False, 0", flush=True)
+            return False, 0
+            
+        # 🔥 FIX 3: Check Prime Exclusive (Screenshot mein yahi dikh raha tha)
+        if 'prime exclusive' in context or 'join prime' in context:
+            print("❌ [DEBUG] Prime Exclusive product mila -> False, 0", flush=True)
+            return False, 0
+
+        # 🔥 FIX 4: Check karein ki button ke baad "Add to Cart" ka text hai ya "See All Buying Options"
+        # Agar "See All Buying Options" hai, toh button kaam nahi karega
+        post_context = html_lower[btn_pos:btn_pos+2000]
+        if 'see all buying options' in post_context:
+            print("❌ [DEBUG] Button ke baad 'See All Buying Options' mila -> False, 0", flush=True)
             return False, 0
             
         print("✅ [DEBUG] Button VISIBLE hai (Hidden nahi hai) -> True, 100", flush=True)
@@ -42,7 +48,7 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
     else:
         print("⚠️ [DEBUG] 'add-to-cart-button' ID nahi mili HTML mein.", flush=True)
 
-    # 4. Fallback Check: Agar button nahi mila par "In Stock" text hai
+    # Fallback Check
     if 'primary-availability-message' in html_lower and 'in stock' in html_lower:
         print("✅ [DEBUG] Fallback: 'In Stock' text mila -> True, 100", flush=True)
         return True, 100
