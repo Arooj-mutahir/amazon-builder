@@ -34,6 +34,7 @@ async def upgrade(
     if store.plan == "advance" and store.plan_status == "active":
         raise HTTPException(400, "Already on Advance plan")
 
+    # 🔥 Return URL (Shopify charge_id khud attach karega)
     return_url = f"https://amazon-builder-production.up.railway.app/api/shopify/billing/callback?shop={shop}"
 
     mutation = """
@@ -48,7 +49,7 @@ async def upgrade(
     variables = {
         "name": "Advance Plan",
         "returnUrl": return_url,
-        "test": True,
+        "test": True,  # 🔥 Production ke liye False karna
         "lineItems": [{
             "plan": {
                 "appRecurringPricingDetails": {
@@ -86,7 +87,6 @@ async def billing_callback(
         store = get_store_by_shop(shop, db)
         
         # 🔥 FIX: Shopify charge_id ko GID format mein convert karo
-        # Charge_id aata hai simple number (74227712077), usko GID banado
         gid = f"gid://shopify/AppSubscription/{charge_id}"
         print(f"🔍 Querying Shopify with GID: {gid}", flush=True)
 
@@ -105,7 +105,6 @@ async def billing_callback(
         
         node = result.get("data", {}).get("node", {})
         if not node:
-            # Fallback: Query AppSubscription directly if node is null
             print(f"⚠️ Node null, trying direct query...", flush=True)
             query2 = """
             query getAppSubscription($id: ID!) {
@@ -126,6 +125,7 @@ async def billing_callback(
             store.plan_started_at = datetime.utcnow()
             store.plan_expires_at = datetime.utcnow() + timedelta(days=30)
             store.auto_sync_enabled = True
+            store.trial_ends_at = None  # 🔥 Trial clear karo (paid user)
             db.commit()
             frontend_url = f"https://admin.shopify.com/store/{shop.split('.')[0]}/apps/amazon-scraper-and-manager/billing?success=true"
         else:
@@ -153,6 +153,7 @@ def downgrade(
     store.plan_status = "active"
     store.auto_sync_enabled = False
     store.plan_expires_at = None
+    store.trial_ends_at = None  # 🔥 Trial clear karo
     db.commit()
     db.refresh(store)
     return {"status": "downgraded", **get_plan_snapshot(store)}

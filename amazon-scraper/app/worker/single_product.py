@@ -102,7 +102,7 @@ async def process_single_variant(
         db.refresh(new_product)
 
     # ==========================================
-    # ✅ 3. Shopify API Call
+    # ✅ 3. Shopify API Call (BINA DB SESSION KE)
     # ==========================================
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
 
@@ -118,7 +118,17 @@ async def process_single_variant(
     if compare_price:
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ Create product
+    # 🔥 FIX: DB CLOSE KARO API CALL SE PEHLE
+    try:
+        db.commit()
+    except:
+        pass
+    try:
+        db.close()
+    except:
+        pass
+
+    # ✅ Create product (bina DB ke)
     result = await create_shopify_product(
         shop=shop_domain, 
         access_token=fresh_token,
@@ -137,27 +147,38 @@ async def process_single_variant(
             return
 
         # ==========================================
-        # ✅ 4. Shopify ID ko DB mein Update karo + PRODUCT COUNT
+        # ✅ 4. NAYA DB SESSION (Shopify ID + Count Update)
         # ==========================================
-        new_product.shopify_product_id = shopify_id
-        
-        # 🔥 FIX: SINGLE PRODUCT KA COUNT UPDATE KARO
-        store.product_count = (store.product_count or 0) + 1
-        print(f"📈 Product count updated: {store.product_count} (+1)", flush=True)
-        
-        db.commit()
-        print(f"✅ Shopify product created: {shopify_id}", flush=True)
+        db2 = SessionLocal()
+        try:
+            # 🔥 REFRESH: Naya product fetch karo (fresh session se)
+            new_product_fresh = db2.query(Product).filter(Product.asin == main_data["asin"]).first()
+            if new_product_fresh:
+                new_product_fresh.shopify_product_id = shopify_id
+                new_product_fresh.shopify_status = "active"
+            
+            # 🔥 PRODUCT COUNT UPDATE
+            store_fresh = db2.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
+            if store_fresh:
+                store_fresh.product_count = (store_fresh.product_count or 0) + 1
+                print(f"📈 Product count updated: {store_fresh.product_count} (+1)", flush=True)
+            
+            db2.commit()
+            print(f"✅ Shopify product created: {shopify_id}", flush=True)
+        except Exception as e:
+            db2.rollback()
+            print(f"⚠️ DB update failed: {e}", flush=True)
+        finally:
+            db2.close()
 
-        # 🔥 FIX: db.close() HATA DIYA HAI (worker.py khud close karega)
-
+        # ==========================================
+        # ✅ 5. Post-Shopify Tasks (Bina DB ke)
+        # ==========================================
         try:
             await publish_product(shop_domain, fresh_token, shopify_id)
         except Exception as e: 
             print(f"⚠️ Auto-publish failed: {e}", flush=True)
         
-        # ==========================================
-        # ✅ 5. Add to Collections
-        # ==========================================
         if collection_ids:
             try:
                 print(f"🛒 Adding product to collections: {collection_ids}", flush=True)

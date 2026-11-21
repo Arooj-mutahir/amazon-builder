@@ -1,7 +1,7 @@
 # app/worker/variants_product.py
 import re
 import traceback
-from app.models import Product
+from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product_with_variants, publish_product, add_product_to_collections, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 from app.worker.stock_utils import _get_availability, _resolve_stock
@@ -45,11 +45,24 @@ async def process_multi_variant(
     shopify_payload["handle"] = final_handle
 
     # ==========================================
-    # 🔥 STEP 1: SHOPIFY API CALL (Agar fail ho toh DB save hoga, par code nahi rukega)
+    # 🔥 STEP 1: PREPARE TOKEN & RELEASE DB CONNECTION BEFORE SHOPIFY API
     # ==========================================
-    shopify_id = None
     token = await _get_valid_access_token(store, db)
-    
+    store_id = store.id
+
+    # 🛑 CRITICAL FIX: Shopify API calls (50+ images upload & variant creation) take 1-3 minutes.
+    # Agar DB session ko open rakha jaye to PostgreSQL 'idle in transaction timeout' se connection kill kar deta hai.
+    if db is not None:
+        try:
+            db.commit()
+        except Exception:
+            pass
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    shopify_id = None
     print(f"🚀 [Shopify] Attempting to create product on Shopify...", flush=True)
     try:
         result = await create_shopify_product_with_variants(
@@ -67,11 +80,15 @@ async def process_multi_variant(
         traceback.print_exc()
 
     # ==========================================
-    # 🔥 STEP 2: PARENT PRODUCT SAVE (DB) - Chahe Shopify fail ho ya pass
+    # 🔥 STEP 2 & 3: FRESH DB SESSION SE PARENT & CHILD SAVE KARO
     # ==========================================
+    db_save = SessionLocal()
+    parent_asin_upper = main_data["asin"].upper()
+    saved_variants_count = 0
+
     try:
-        parent_asin_upper = main_data["asin"].upper()
-        new_product = db.query(Product).filter(Product.asin == parent_asin_upper).first()
+        # --- PARENT PRODUCT SAVE ---
+        new_product = db_save.query(Product).filter(Product.asin == parent_asin_upper).first()
         
         parent_available = _get_availability(main_data)
         parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_qty"), default_stock_qty)
@@ -89,13 +106,13 @@ async def process_multi_variant(
                 amazon_price=main_data.get("price"), price=shopify_payload["price"],
                 markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
                 variant_attributes=main_data.get("variant_attributes") or [], categories=extracted_categories,
-                tags=final_tags, shopify_store_id=store.id, shopify_status="pending" if not shopify_id else "active",
+                tags=final_tags, shopify_store_id=store_id, shopify_status="pending" if not shopify_id else "active",
                 shopify_product_id=shopify_id, shopify_handle=final_handle,
             )
-            db.add(new_product)
+            db_save.add(new_product)
         else:
             new_product.shopify_product_id = shopify_id
-            new_product.shopify_store_id = store.id
+            new_product.shopify_store_id = store_id
             new_product.shopify_status = "pending" if not shopify_id else "active"
             new_product.price = shopify_payload["price"]
             new_product.amazon_price = main_data.get("price")
@@ -117,62 +134,74 @@ async def process_multi_variant(
             new_product.tags = final_tags
             new_product.shopify_handle = final_handle
         
-        db.commit()
-        db.refresh(new_product)
+        db_save.commit()
+        db_save.refresh(new_product)
         print(f"✅ [DB SUCCESS] Parent saved in DB! ID: {new_product.id}", flush=True)
+
+        # --- CHILD PRODUCTS SAVE ---
+        # 🔥 FIX: Total variants count (default + children)
+        saved_variants_count = len(clean_variants)  # Total variants including default
+
+        for v in clean_variants:
+            try:
+                v_asin_upper = v.get("asin", "").upper()
+                if not v_asin_upper or v_asin_upper == parent_asin_upper:
+                    continue  # Default variant already counted in len()
+
+                v_amazon_price = v.get("price") or main_data.get("price") or 0.0
+                v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
+                v_images = v.get("images") or []
+                v_resolved = _resolve_stock(v.get("in_stock"), v.get("stock_qty"), default_stock_qty) or 0
+                v_in_stock = v_resolved > 0
+                v_avail = "In Stock" if v_in_stock else "Out of Stock"
+                v_title = f"{main_data.get('title', '')} - {v.get('title', '')}" if v.get('title') else main_data.get("title", "")
+
+                child_existing = db_save.query(Product).filter(Product.asin == v_asin_upper).first()
+                if not child_existing:
+                    child_product = Product(
+                        asin=v_asin_upper, parent_asin=parent_asin_upper, is_variation=True,
+                        title=v_title[:255], brand=main_data.get("brand"), description=main_data.get("description", ""),
+                        image_url=v_images[0] if v_images else None, images=v_images,
+                        rating=main_data.get("rating"), reviews_count=main_data.get("reviews_count"),
+                        availability=v_avail, is_available=v_in_stock, stock_quantity=int(v_resolved),
+                        amazon_price=float(v_amazon_price), price=float(v_final_price),
+                        markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
+                        variant_attributes=v.get("option_values") or [], categories=extracted_categories, tags=final_tags,
+                        shopify_product_id=shopify_id, shopify_store_id=store_id, 
+                        shopify_status="pending" if not shopify_id else "active", shopify_handle=final_handle,
+                    )
+                    db_save.add(child_product)
+                else:
+                    child_existing.shopify_product_id = shopify_id
+                    child_existing.shopify_store_id = store_id
+                    child_existing.shopify_status = "pending" if not shopify_id else "active"
+                    child_existing.price = float(v_final_price)
+                    child_existing.amazon_price = float(v_amazon_price)
+                    child_existing.stock_quantity = int(v_resolved)
+                    child_existing.is_available = v_in_stock
+                    child_existing.availability = v_avail
+
+            except Exception as e:
+                print(f"⚠️ Variant {v.get('asin')} DB prepare failed: {e}", flush=True)
+
+        db_save.commit()
+
+        # 🔥 FIX: Update product count on store (saved_variants_count already includes default variant)
+        store_db = db_save.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+        if store_db:
+            store_db.product_count = (store_db.product_count or 0) + saved_variants_count
+            db_save.commit()
+            print(f"📈 [DB SUCCESS] Product count updated: {store_db.product_count} (+{saved_variants_count})", flush=True)
+
     except Exception as e:
-        db.rollback()
-        print(f"❌ [DB ERROR] Parent Save Failed: {e}", flush=True)
+        db_save.rollback()
+        print(f"❌ [DB ERROR] Save Failed: {e}", flush=True)
         traceback.print_exc()
-        return
-
-    # ==========================================
-    # 🔥 STEP 3: CHILD PRODUCTS SAVE (DB)
-    # ==========================================
-    saved_variants_count = 0
-    for v in clean_variants:
+    finally:
         try:
-            v_asin_upper = v.get("asin", "").upper()
-            if not v_asin_upper or v_asin_upper == parent_asin_upper:
-                continue
-
-            v_amazon_price = v.get("price") or main_data.get("price") or 0.0
-            v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
-            v_images = v.get("images") or []
-            v_resolved = _resolve_stock(v.get("in_stock"), v.get("stock_qty"), default_stock_qty) or 0
-            v_in_stock = v_resolved > 0
-            v_avail = "In Stock" if v_in_stock else "Out of Stock"
-            v_title = f"{main_data.get('title', '')} - {v.get('title', '')}" if v.get('title') else main_data.get("title", "")
-
-            child_existing = db.query(Product).filter(Product.asin == v_asin_upper).first()
-            if not child_existing:
-                child_product = Product(
-                    asin=v_asin_upper, parent_asin=parent_asin_upper, is_variation=True,
-                    title=v_title[:255], brand=main_data.get("brand"), description=main_data.get("description", ""),
-                    image_url=v_images[0] if v_images else None, images=v_images,
-                    rating=main_data.get("rating"), reviews_count=main_data.get("reviews_count"),
-                    availability=v_avail, is_available=v_in_stock, stock_quantity=int(v_resolved),
-                    amazon_price=float(v_amazon_price), price=float(v_final_price),
-                    markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
-                    variant_attributes=v.get("option_values") or [], categories=extracted_categories, tags=final_tags,
-                    shopify_product_id=shopify_id, shopify_store_id=store.id, 
-                    shopify_status="pending" if not shopify_id else "active", shopify_handle=final_handle,
-                )
-                db.add(child_product)
-            
-            db.commit()
-            saved_variants_count += 1
-        except Exception as e:
-            db.rollback()
-            print(f"⚠️ Variant {v.get('asin')} DB save failed: {e}", flush=True)
-
-    try:
-        store.product_count = (store.product_count or 0) + saved_variants_count + 1
-        db.commit()
-        print(f"✅ [DB SUCCESS] Saved {saved_variants_count} variants in DB! Count updated.", flush=True)
-    except Exception as e:
-        db.rollback()
-        print(f"⚠️ Count update failed: {e}", flush=True)
+            db_save.close()
+        except Exception:
+            pass
 
     # ==========================================
     # 🔥 STEP 4: POST-SHOPIFY TASKS (Sirf agar product bana hai)

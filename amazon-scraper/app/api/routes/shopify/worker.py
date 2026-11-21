@@ -1,5 +1,6 @@
 # app/api/routes/shopify/worker.py
 import traceback
+from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -24,7 +25,7 @@ async def _background_fetch_and_push(
     print(f"\n🔥🔥🔥 BACKGROUND JOB STARTED for {amazon_url} 🔥🔥🔥", flush=True)
 
     # ============================================================
-    # PHASE 1: Store fetch & LIMIT CHECK
+    # PHASE 1: Store fetch & TRIAL/LIMIT CHECK
     # ============================================================
     db = SessionLocal()
     try:
@@ -32,6 +33,12 @@ async def _background_fetch_and_push(
         if not store:
             print("❌ Store not found", flush=True)
             return
+
+        # 🔥 TRIAL EXPIRY CHECK
+        if store.trial_ends_at and store.trial_ends_at < datetime.utcnow():
+            if store.plan_status == "active" and not store.plan_expires_at:
+                print(f"⏰ TRIAL EXPIRED: Store {store.shop_domain}. Import blocked.", flush=True)
+                return
 
         # 🔥 PLAN LIMIT CHECK
         if (store.plan or "").lower() == "basic":
@@ -61,7 +68,10 @@ async def _background_fetch_and_push(
         store_plan = store.plan
 
     finally:
-        db.close()
+        try:
+            db.close()
+        except:
+            pass
 
     # ============================================================
     # PHASE 2: Scraping (BINA DB session ke)
@@ -141,6 +151,12 @@ async def _background_fetch_and_push(
         if not store_fresh:
             print("❌ Store disappeared during scraping", flush=True)
             return
+
+        # 🔥 RE-CHECK TRIAL EXPIRY (Agar scraping ke dauran expire ho gaya)
+        if store_fresh.trial_ends_at and store_fresh.trial_ends_at < datetime.utcnow():
+            if store_fresh.plan_status == "active" and not store_fresh.plan_expires_at:
+                print(f"⏰ TRIAL EXPIRED DURING SCRAPE: {store_fresh.shop_domain}. Import blocked.", flush=True)
+                return
 
         # 🔥 RE-CHECK LIMIT
         if (store_fresh.plan or "").lower() == "basic":
