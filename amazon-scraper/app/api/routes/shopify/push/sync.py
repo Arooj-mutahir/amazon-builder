@@ -30,7 +30,11 @@ class SyncSingleRequest(BaseModel):
 async def sync_single_product(payload: SyncSingleRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     # 1. Store check karein
     store = db.query(ShopifyStore).filter(ShopifyStore.id == payload.store_id).first()
-    if not store or store.plan != "advance":
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found.")
+    
+    # (Optional) Advance plan check
+    if store.plan != "advance":
         raise HTTPException(status_code=403, detail="Manual Sync is only for Advance Plan.")
 
     # 2. Product check karein
@@ -40,10 +44,12 @@ async def sync_single_product(payload: SyncSingleRequest, background_tasks: Back
     ).first()
     
     if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(status_code=404, detail="Product not found in this store.")
 
     # 3. Background task mein sync shuru karein
-    # (Note: Abhi yeh poore store ko sync karega, kyunki sync_prices_job poore store ke liye bana hai)
+    # Abhi ke liye hum poore store ka sync trigger kar rahe hain.
+    # Agar aap chahte hain ki sirf yahi product sync ho, toh sync_job.py mein 
+    # product_id pass karne ka option add karna hoga.
     background_tasks.add_task(sync_prices_job, store_id=payload.store_id)
     
-    return {"success": True, "message": f"Sync started for ASIN {payload.asin}"}
+    return {"success": True, "message": f"Sync started for ASIN {payload.asin}. Check terminal for updates."}
