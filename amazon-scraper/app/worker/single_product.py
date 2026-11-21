@@ -12,7 +12,7 @@ async def process_single_variant(
     store, main_data, user_markup, user_markup_type, user_extra, user_tax, 
     final_tags, extracted_categories, shopify_payload, shop_domain, db, default_stock_qty,
     compare_price_markup: float = 0.0,
-    collection_ids: list = None  # 🔥 FIX: Collection IDs parameter add kiya
+    collection_ids: list = None
 ):
     new_product = None
     existing = db.query(Product).filter(Product.asin == main_data["asin"]).first()
@@ -137,9 +137,14 @@ async def process_single_variant(
             return
 
         # ==========================================
-        # ✅ 4. Shopify ID ko DB mein Update karo
+        # ✅ 4. Shopify ID ko DB mein Update karo + PRODUCT COUNT
         # ==========================================
         new_product.shopify_product_id = shopify_id
+        
+        # 🔥 FIX: SINGLE PRODUCT KA COUNT UPDATE KARO
+        store.product_count = (store.product_count or 0) + 1
+        print(f"📈 Product count updated: {store.product_count} (+1)", flush=True)
+        
         db.commit()
         print(f"✅ Shopify product created: {shopify_id}", flush=True)
 
@@ -147,13 +152,12 @@ async def process_single_variant(
         db.close()
 
         try:
-            # token already fresh_token se generate ho chuka hai
             await publish_product(shop_domain, fresh_token, shopify_id)
         except Exception as e: 
             print(f"⚠️ Auto-publish failed: {e}", flush=True)
         
         # ==========================================
-        # ✅ 5. NAYA FIX: Add to Collections
+        # ✅ 5. Add to Collections
         # ==========================================
         if collection_ids:
             try:
@@ -171,7 +175,6 @@ async def process_single_variant(
                 print(f"📏 Size chart added to metafields", flush=True)
                 
             if raw_details:
-                # fresh_token use karo, naya DB session banane ki zaroorat nahi
                 await set_product_metafields_smart(shop=shop_domain, access_token=fresh_token, product_id=shopify_id, raw_details=raw_details)
         except Exception as e:
             print(f"⚠️ Metafields set nahi ho paye: {e}", flush=True)

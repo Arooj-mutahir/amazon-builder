@@ -174,11 +174,7 @@ async def _background_fetch_and_push(
                 collection_ids=collection_ids
             )
 
-        # 🔥 PRODUCT COUNT UPDATE
-        variants_count = len(clean_variants) if clean_variants else 1
-        store_fresh.product_count = (store_fresh.product_count or 0) + variants_count
-        db2.commit()
-        print(f"📈 Product count updated: {store_fresh.product_count}/{limit}", flush=True)
+        # 🔥 REMOVED: Product count update (Ab yeh variants_product.py aur single_product.py ke andar ho raha hai)
         
         db2.close()
 

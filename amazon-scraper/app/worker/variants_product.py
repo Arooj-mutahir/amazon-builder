@@ -247,6 +247,10 @@ async def process_multi_variant(
                 db.add(child_product)
             saved_variants_count += 1
 
+        # 🔥 FIX: PRODUCT COUNT UPDATE (Yahan add kiya)
+        store.product_count = (store.product_count or 0) + saved_variants_count
+        print(f"📈 Product count updated: {store.product_count} (+{saved_variants_count})", flush=True)
+
         db.commit()
         print(f"✅ Saved all {saved_variants_count} variants to Database!", flush=True)
 
@@ -255,13 +259,12 @@ async def process_multi_variant(
         db.rollback()
 
     # ==========================================
-    # 🔥 NEW FIX: DB ko band karo API calls se pehle
+    # 🔥 DB ko band karo API calls se pehle
     # ==========================================
     db.close()
 
     # ==========================================
     # ✅ 7. Publish, Collections, Metafields
-    # (Ab yeh API calls chalengi, bina DB ke, toh timeout nahi hoga)
     # ==========================================
     try:
         await publish_product(shop_domain, token, shopify_id)
@@ -269,7 +272,6 @@ async def process_multi_variant(
     except Exception as e: 
         print(f"⚠️ Auto-publish failed: {e}", flush=True)
     
-    # 🔥 DEBUGGING ADD KIYA HAI
     print(f"🛒 Collection IDs received from Frontend: {collection_ids}", flush=True)
     
     if collection_ids:
