@@ -148,7 +148,8 @@ async def process_single_variant(
         db.commit()
         print(f"✅ Shopify product created: {shopify_id}", flush=True)
 
-        # 🔥 FIX: db.close() HATA DIYA HAI (worker.py khud close karega)
+        # 🔥 FIX: DB CLOSE KARO (API CALLS SE PEHLE)
+        db.close()
 
         try:
             await publish_product(shop_domain, fresh_token, shopify_id)

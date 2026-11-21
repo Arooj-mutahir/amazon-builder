@@ -174,10 +174,6 @@ async def _background_fetch_and_push(
                 collection_ids=collection_ids
             )
 
-        # 🔥 REMOVED: Product count update (Ab yeh variants_product.py aur single_product.py ke andar ho raha hai)
-        
-        db2.close()
-
     except Exception as e:
         print(f"\n❌ SAVE CRASHED: {e}", flush=True)
         traceback.print_exc()
@@ -191,24 +187,3 @@ async def _background_fetch_and_push(
                 db2.close()
         except:
             pass  # Already closed by process_multi_variant
-
-# Scheduler Setup
-scheduler = AsyncIOScheduler()
-
-async def run_price_update_now():
-    from app.worker.sync_job import sync_prices_job
-    print("⚡ [MANUAL TRIGGER] Price + Stock Sync Started...", flush=True)
-    await sync_prices_job()
-
-def start_scheduler():
-    from app.worker.sync_job import sync_prices_job
-    
-    scheduler.add_job(
-        sync_prices_job,
-        trigger=CronTrigger(hour=2, minute=0),
-        id="price_sync_job",
-        name="Sync Amazon Prices & Stock to Shopify",
-        replace_existing=True,
-    )
-    scheduler.start()
-    print("🚀 CRON JOB SCHEDULED: Har raat 2 baje price + stock check hoga.")
