@@ -194,11 +194,13 @@ async def process_multi_variant(
     # ✅ 6. CHILD PRODUCTS SAVE (DB)
     # ==========================================
     try:
-        saved_variants_count = 0
+        # 🔥 FIX: Default variant bhi count karo
+        saved_variants_count = len(clean_variants)  # Total variants (including default)
+
         for v in clean_variants:
             v_asin = v.get("asin")
             if not v_asin or v_asin == main_data.get("asin"):
-                continue
+                continue  # Default variant already counted
 
             v_amazon_price = v.get("price") or main_data.get("price") or 0.0
             v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
@@ -246,9 +248,8 @@ async def process_multi_variant(
                     shopify_handle=final_handle,
                 )
                 db.add(child_product)
-            saved_variants_count += 1
 
-        # 🔥 FIX: PRODUCT COUNT UPDATE
+        # 🔥 FIX: PRODUCT COUNT UPDATE (Default variant bhi count hoga)
         store.product_count = (store.product_count or 0) + saved_variants_count
         print(f"📈 Product count updated: {store.product_count} (+{saved_variants_count})", flush=True)
 
