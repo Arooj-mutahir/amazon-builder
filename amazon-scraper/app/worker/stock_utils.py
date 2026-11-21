@@ -21,56 +21,68 @@ def _resolve_stock(available, stock_qty, default_stock_qty: int = 0) -> int | No
 
 
 def _extract_stock(raw_product: dict, raw_html: str = None):
-    """
-    Strict Logic:
-    1. Agar "Currently Unavailable" ya "Out of Stock" hai -> False, 0
-    2. Agar 'submit.add-to-cart' ya 'add-to-cart-button' visible hai -> True, 100
-    3. Agar button hidden hai -> False, 0
-    """
+    print("\n🔍 [DEBUG] _extract_stock shuru hua...", flush=True)
+    
     if not raw_html:
+        print("❌ [DEBUG] raw_html khaali hai -> False, 0", flush=True)
         return False, 0
 
     html_lower = raw_html.lower()
 
-    # 1. Direct Text Check for Out of Stock
-    if 'currently unavailable' in html_lower or 'out of stock' in html_lower:
+    # ==========================================
+    # 🛑 1. BOT / CAPTCHA CHECK (Sabse Zaroori)
+    # ==========================================
+    if "javascript is disabled" in html_lower or "not a robot" in html_lower or "validatecaptcha" in html_lower:
+        print("❌ [BOT DETECTED] Amazon ne Captcha/Bot page bheja hai. Stock 0 rakha ja raha hai.", flush=True)
+        return False, 0
+
+    # ==========================================
+    # 🛑 2. OUT OF STOCK CHECK (Text Based)
+    # ==========================================
+    if "currently unavailable" in html_lower or "out of stock" in html_lower:
         print("❌ [DEBUG] 'Currently unavailable' ya 'Out of Stock' text mila -> False, 0", flush=True)
         return False, 0
 
-    if 'see all buying options' in html_lower:
+    if 'see all buying options' in html_lower or 'available at a lower price from other sellers' in html_lower:
         print("❌ [DEBUG] 'Other sellers' mila -> False, 0", flush=True)
         return False, 0
 
-    # 2. Button Check (Strict)
-    # Hum dono ids check kar rahe hain: submit.add-to-cart aur add-to-cart-button
-    # Aur humne ensure kiya hai ki button ke aas-paas 'nav-assist' ya 'display: none' na ho
-    button_pattern = r'<(?:input|span)[^>]*id=["\'](?:add-to-cart-button|submit\.add-to-cart)["\'][^>]*>'
-    
+    # ==========================================
+    # ✅ 3. STRICT BUTTON CHECK
+    # ==========================================
+    # Hum sirf 'add-to-cart-button' dhundh rahe hain
+    button_pattern = r'<input[^>]*id=["\']add-to-cart-button["\'][^>]*>'
     matches = list(re.finditer(button_pattern, raw_html, re.IGNORECASE))
     
     if not matches:
-        print("❌ [DEBUG] Koi bhi button tag nahi mila -> False, 0", flush=True)
+        print("❌ [DEBUG] Koi bhi 'add-to-cart-button' nahi mila -> False, 0", flush=True)
         return False, 0
 
-    # 3. Check Visibility for each match
+    is_visible = False
     for match in matches:
-        # 500 characters pehle ka context dekho
-        start_idx = max(0, match.start() - 500)
+        # Button ke 1000 chars pehle ka context dekho
+        start_idx = max(0, match.start() - 1000)
         context = html_lower[start_idx:match.start()]
         
         # Skip hidden or nav-assist buttons
         if 'nav-assist' in context or 'display: none' in context or 'aok-hidden' in context:
+            print("⚠️ [DEBUG] Ek hidden/nav-assist button mila, skip kar rahe hain...", flush=True)
             continue
         
-        # Check the button tag itself
+        # Button tag khud hidden toh nahi?
         button_tag = match.group(0).lower()
         if 'display: none' in button_tag or 'visibility: hidden' in button_tag or 'aria-hidden="true"' in button_tag:
+            print("⚠️ [DEBUG] Button tag mein hi hidden hai, skip...", flush=True)
             continue
 
-        # Agar yahan tak aaye, toh button visible hai
-        print("✅ [DEBUG] Asli visible button mil gaya -> True, 100", flush=True)
+        # Agar sab pass ho gaya, matlab button visible hai
+        is_visible = True
+        print("✅ [DEBUG] Asli visible 'Add to Cart' button mil gaya -> True, 100", flush=True)
+        break
+
+    if is_visible:
         return True, 100
 
-    # 4. Fallback: Agar button toh hai par hidden hai, aur koi "In Stock" text nahi hai
-    print("❌ [DEBUG] Button hidden hai (stock out) -> False, 0", flush=True)
+    # Fallback: Agar button toh hai par hidden hai
+    print("❌ [DEBUG] Button hidden hai (out of stock) -> False, 0", flush=True)
     return False, 0
