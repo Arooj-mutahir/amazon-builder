@@ -260,39 +260,34 @@ async def process_multi_variant(
         db.rollback()
 
     # ==========================================
-    # 🔥 FIX: DB CLOSE KARO (API CALLS SE PEHLE)
-    # ==========================================
-    db.close()
-
-    # ==========================================
     # ✅ 7. Publish, Collections, Metafields
+    # 🔥 FIX: Yahan NAYA SESSION use karo
     # ==========================================
+    new_db = SessionLocal()
     try:
         await publish_product(shop_domain, token, shopify_id)
         print(f"✅ Product Published Successfully", flush=True)
-    except Exception as e: 
-        print(f"⚠️ Auto-publish failed: {e}", flush=True)
-    
-    print(f"🛒 Collection IDs received from Frontend: {collection_ids}", flush=True)
-    
-    if collection_ids:
+        
+        if collection_ids:
+            try:
+                print(f"🛒 Adding product to collections: {collection_ids}", flush=True)
+                await add_product_to_collections(shop_domain, token, shopify_id, collection_ids)
+                print(f"✅ Product added to collections successfully!", flush=True)
+            except Exception as e: 
+                print(f"❌ Collection add failed: {e}", flush=True)
+        else:
+            print(f"⚠️ No collection_ids received (empty list). Product not added to any collection.", flush=True)
+        
         try:
-            print(f"🛒 Adding product to collections: {collection_ids}", flush=True)
-            await add_product_to_collections(shop_domain, token, shopify_id, collection_ids)
-            print(f"✅ Product added to collections successfully!", flush=True)
-        except Exception as e: 
-            print(f"❌ Collection add failed: {e}", flush=True)
-    else:
-        print(f"⚠️ No collection_ids received (empty list). Product not added to any collection.", flush=True)
-    
-    try:
-        raw_details = dict(main_data.get("details") or {})
-        raw_details["asin"] = main_data.get("asin")
-        if shopify_payload.get("size_chart"):
-            raw_details["size_chart"] = shopify_payload["size_chart"]
-            print(f"📏 Size chart added to metafields", flush=True)
-            
-        if raw_details:
-            await set_product_metafields_smart(shop=shop_domain, access_token=token, product_id=shopify_id, raw_details=raw_details)
-    except Exception as e:
-        print(f"⚠️ Metafields set nahi ho paye: {e}", flush=True)
+            raw_details = dict(main_data.get("details") or {})
+            raw_details["asin"] = main_data.get("asin")
+            if shopify_payload.get("size_chart"):
+                raw_details["size_chart"] = shopify_payload["size_chart"]
+                print(f"📏 Size chart added to metafields", flush=True)
+                
+            if raw_details:
+                await set_product_metafields_smart(shop=shop_domain, access_token=token, product_id=shopify_id, raw_details=raw_details)
+        except Exception as e:
+            print(f"⚠️ Metafields set nahi ho paye: {e}", flush=True)
+    finally:
+        new_db.close()
