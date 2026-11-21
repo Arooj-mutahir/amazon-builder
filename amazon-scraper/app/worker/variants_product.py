@@ -247,7 +247,7 @@ async def process_multi_variant(
                 db.add(child_product)
             saved_variants_count += 1
 
-        # 🔥 FIX: PRODUCT COUNT UPDATE (Yahan add kiya)
+        # 🔥 FIX: PRODUCT COUNT UPDATE
         store.product_count = (store.product_count or 0) + saved_variants_count
         print(f"📈 Product count updated: {store.product_count} (+{saved_variants_count})", flush=True)
 
@@ -259,12 +259,8 @@ async def process_multi_variant(
         db.rollback()
 
     # ==========================================
-    # 🔥 DB ko band karo API calls se pehle
-    # ==========================================
-    db.close()
-
-    # ==========================================
     # ✅ 7. Publish, Collections, Metafields
+    # 🔥 FIX: Yahan db.close() NAHI karna hai, worker.py khud band karega
     # ==========================================
     try:
         await publish_product(shop_domain, token, shopify_id)

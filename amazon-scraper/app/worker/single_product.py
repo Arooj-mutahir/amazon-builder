@@ -148,8 +148,7 @@ async def process_single_variant(
         db.commit()
         print(f"✅ Shopify product created: {shopify_id}", flush=True)
 
-        # 🔥 FIX: DB close karo API calls se pehle (Idle timeout prevent)
-        db.close()
+        # 🔥 FIX: db.close() HATA DIYA HAI (worker.py khud close karega)
 
         try:
             await publish_product(shop_domain, fresh_token, shopify_id)
