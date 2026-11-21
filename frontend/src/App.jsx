@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useState, useEffect, useCallback, Component } from 'react';
 import axios from 'axios';
-import { AlertTriangle, Sparkles, Loader2 } from 'lucide-react'; 
+import { AlertTriangle, Sparkles, Loader2, Clock, ShieldAlert } from 'lucide-react'; 
 
 import DashboardView from './components/DashboardView';
 import Settings from './components/Settings';
@@ -39,7 +39,12 @@ class ErrorBoundary extends Component {
 }
 
 export default function App() {
-  const { isAdvance, isBasic, plan, status, loading: planLoading } = usePlan();
+  // 🔥 NAYE fields destructure kiye
+  const { 
+    isAdvance, isBasic, isExpired, plan, status, 
+    daysLeftInTrial, productCount, productLimit, 
+    loading: planLoading 
+  } = usePlan();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(null);
@@ -211,7 +216,6 @@ export default function App() {
     setSuccessMsg('');
 
     try {
-      // 🔥 FIX: Basic user ke liye extra, tax aur compare price force 0 karo
       const payloadExtra = isAdvance ? parseFloat(extraPercent || 0) : 0;
       const payloadTax = isAdvance ? parseFloat(taxRate || 0) : 0;
       const payloadCompare = isAdvance ? parseFloat(comparePriceMarkup || 0) : 0;
@@ -273,8 +277,39 @@ export default function App() {
     );
   }
 
+  // 🔥 NAYA: Warning Banner Component (Trial aur Limit ke liye)
+  const renderBanner = () => {
+    // 1. Trial Expired (Red)
+    if (isExpired) {
+      return (
+        <div className="bg-red-600 text-white text-center py-2.5 text-sm font-medium flex justify-center items-center gap-2">
+          <ShieldAlert size={18} /> Your trial has expired. Please subscribe to a plan to continue.
+        </div>
+      );
+    }
+    // 2. Trial Active (Yellow)
+    if (daysLeftInTrial > 0 && !isAdvance) {
+      return (
+        <div className="bg-yellow-100 text-yellow-800 text-center py-2.5 text-sm font-medium flex justify-center items-center gap-2 border-b border-yellow-200">
+          <Clock size={18} /> Your Basic Trial expires in <b>{daysLeftInTrial} days</b>. Upgrade to keep features.
+        </div>
+      );
+    }
+    // 3. Product Limit Warning (Orange - 80% crossed)
+    if (productCount >= (productLimit * 0.8)) {
+      return (
+        <div className="bg-orange-100 text-orange-800 text-center py-2.5 text-sm font-medium flex justify-center items-center gap-2 border-b border-orange-200">
+          <AlertTriangle size={18} /> You have used {productCount}/{productLimit} product limit. Upgrade for more.
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#F8F9FA] font-sans text-gray-800">
+      {renderBanner()} {/* 🔥 YEH ADD KARO */}
+      
       <main className="flex-1 flex flex-col overflow-y-auto">
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex flex-col">
@@ -289,12 +324,18 @@ export default function App() {
               isAdvance ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
             }`}>
               {isAdvance ? "⭐ Advance" : "Basic"}
-              {status === "expired" && " (Expired)"}
+              {isExpired && " (Expired)"}
             </span>
 
-            {isBasic && (
+            {isBasic && !isExpired && (
               <button onClick={() => handleTabChange('billing')} className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 shadow-sm hover:opacity-90 transition">
                 <Sparkles size={16} /> Upgrade
+              </button>
+            )}
+
+            {isExpired && (
+              <button onClick={() => handleTabChange('billing')} className="bg-red-600 text-white text-sm px-4 py-2 rounded-lg font-medium flex items-center gap-1.5 shadow-sm hover:bg-red-700 transition">
+                <ShieldAlert size={16} /> Subscribe Now
               </button>
             )}
 
@@ -312,13 +353,15 @@ export default function App() {
               url={url} setUrl={setUrl} loading={loading} onSubmit={handleModalImport}
               isAutoSyncEnabled={isAutoSyncEnabled} onToggleAutoSync={handleToggleAutoSync}
               collections={collections} selectedCollections={selectedCollections} setSelectedCollections={setSelectedCollections}
-              // 🔥 FIX: Basic user ko 0 values bhej do
               markup={markup} markupType={markupType} 
               extraPercent={isAdvance ? extraPercent : '0'} 
               taxRate={isAdvance ? taxRate : '0'} 
               comparePriceMarkup={isAdvance ? comparePriceMarkup : '0'}
               API_URL={API_URL} selectedStoreId={selectedStoreId}
               isAdvance={isAdvance}
+              isExpired={isExpired}
+              productCount={productCount}
+              productLimit={productLimit}
             />
           )}
 

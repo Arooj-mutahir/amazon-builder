@@ -12,6 +12,10 @@ const FALLBACK = {
     auto_sync: false, 
     extra_pricing: false,
   },
+  // 🔥 NAYA: Trial & Limit fallbacks
+  daysLeftInTrial: 0,
+  productCount: 0,
+  productLimit: 1000,
 };
 
 export function usePlan() {
@@ -19,13 +23,9 @@ export function usePlan() {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async (showLoader = false) => {
-    // 🔥 FIX: Default mein loader nahi dikhayenge. 
-    // App.jsx initial load pe 'loading' check karega. 
-    // Billing page pe upgrade ke baad loader nahi aayega, UI smoothly update hoga.
     if (showLoader) setLoading(true);
 
     try {
-      // 1. Shopify URL se shop domain nikalo
       const urlParams = new URLSearchParams(window.location.search);
       const shop = urlParams.get('shop');
 
@@ -35,11 +35,9 @@ export function usePlan() {
         return;
       }
 
-      // 2. Backend se store details fetch karo
       const res = await axios.get(`${API_URL}/stores/by-shop?shop=${shop}`);
       const storeData = res.data || {};
       
-      // 3. Sahi format mein data set karo
       setData({
         plan: (storeData.plan || "basic").toLowerCase(), 
         status: (storeData.plan_status || "active").toLowerCase(), 
@@ -47,29 +45,30 @@ export function usePlan() {
           manual_sync: (storeData.plan || "").toLowerCase() === "advance",
           auto_sync: (storeData.plan || "").toLowerCase() === "advance",
           extra_pricing: (storeData.plan || "").toLowerCase() === "advance",
-        }
+        },
+        // 🔥 NAYA: Trial aur Limit data backend se set karo
+        daysLeftInTrial: storeData.days_left_in_trial || 0,
+        productCount: storeData.product_count || 0,
+        productLimit: storeData.product_limit || 1000,
       });
 
     } catch (err) {
       console.error("Plan fetch failed:", err);
-      // 🔥 FIX: Agar network error aaye, toh purana data hi rakho, 
-      // forcefully basic mat banao (warna upgrade ke baad error aane pe downgrade ho jayega)
     } finally {
       if (showLoader) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    // Initial load pe loader dikhao
     refresh(true);
   }, [refresh]);
 
   return {
     ...data,
     loading,
-    // 🔥 Strict Check: Sirf tabhi Advance maano jab plan 'advance' ho AUR status 'active' ho
     isAdvance: data.plan === "advance" && data.status === "active",
     isBasic: data.plan === "basic" || !data.plan,
+    isExpired: data.status === "expired", // 🔥 NAYA
     refresh,
   };
 }

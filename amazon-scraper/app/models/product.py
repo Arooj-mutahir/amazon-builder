@@ -21,6 +21,10 @@ class ShopifyStore(Base):
     plan_expires_at = Column(DateTime, nullable=True)
     plan_started_at = Column(DateTime, default=datetime.utcnow)
 
+    # ==================== TRIAL & LIMIT SYSTEM ====================
+    trial_ends_at = Column(DateTime, nullable=True)                 # 🔥 NAYA: 7-day trial expiry
+    product_count = Column(Integer, default=0)                      # 🔥 NAYA: Total products imported
+
     # ==================== PRICING SETTINGS ====================
     default_markup = Column(Float, default=0.0)
     default_markup_type = Column(String, default="fixed")

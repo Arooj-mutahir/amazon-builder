@@ -57,21 +57,35 @@ def _is_store_sync_eligible(store, db) -> bool:
     if not store:
         return False
 
-    # ✅ FIX #1: Case-insensitive plan check
+    # 🔥 FIX #1: TRIAL EXPIRY CHECK (Sabse pehle)
+    if store.trial_ends_at and store.trial_ends_at < datetime.utcnow():
+        # Trial khatam, aur agar plan_expires_at NULL hai (matlab paise nahi diye)
+        if not store.plan_expires_at and (store.plan_status or "").lower() == "active":
+            print(f"⏰ Trial expired for {store.shop_domain} → downgrading to basic/expired", flush=True)
+            store.plan = "basic"
+            store.plan_status = "expired"
+            store.auto_sync_enabled = False
+            try:
+                db.commit()
+            except Exception as e:
+                print(f"   ⚠️ Could not downgrade store {store.id}: {e}", flush=True)
+                db.rollback()
+            return False
+
+    # ✅ FIX #2: Case-insensitive plan check
     if (store.plan or "").lower() != "advance":
         return False
 
-    # ✅ FIX #2: plan_status field safe access (agar model mein nahi hai toh skip)
+    # ✅ FIX #3: plan_status check
     plan_status = getattr(store, "plan_status", None)
-    if plan_status and plan_status != "active":
+    if plan_status and plan_status.lower() != "active":
         return False
 
-    # ✅ FIX #4: auto_sync_enabled default None/NULL handle
-    # Agar NULL hai lekin plan advance hai — auto_sync ko OFF maano (explicit enable required)
+    # ✅ FIX #4: auto_sync ON hona chahiye
     if not bool(getattr(store, "auto_sync_enabled", False)):
         return False
 
-    # ✅ FIX #2: plan_expires_at field safe access
+    # ✅ FIX #5: Paid plan expiry check
     expires_at = getattr(store, "plan_expires_at", None)
     if expires_at and expires_at < datetime.utcnow():
         print(f"   ⏰ Plan expired for {store.shop_domain} → downgrading to basic", flush=True)
@@ -107,7 +121,6 @@ async def sync_prices_job(store_id: int = None):
         products = query.all()
         print(f"🔍 Found {len(products)} products with Shopify IDs to check.\n", flush=True)
 
-        # ✅ Store cache — baar baar DB hit na ho
         _eligible_cache = {}
 
         for product in products:
@@ -116,9 +129,6 @@ async def sync_prices_job(store_id: int = None):
                 if not store:
                     continue
 
-                # ====================================================
-                # ✅ PLAN GATE — Basic / expired / auto-sync-off → skip
-                # ====================================================
                 if store.id not in _eligible_cache:
                     _eligible_cache[store.id] = _is_store_sync_eligible(store, db)
 
@@ -129,7 +139,6 @@ async def sync_prices_job(store_id: int = None):
                 print(f"=======================================================", flush=True)
                 print(f"🔎 Checking ASIN: {product.asin} (Shopify ID: {product.shopify_product_id})", flush=True)
 
-                # Store settings
                 store_markup = float(store.default_markup if store.default_markup is not None else 0.0)
                 store_markup_type = str(store.default_markup_type or "fixed").lower()
                 store_extra = float(store.default_extra_percent if store.default_extra_percent is not None else 0.0)

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
 from app.database import get_db
 from app.models import ShopifyStore, Product
 from app.dependencies import get_store_or_404, require_advance_plan
@@ -24,11 +25,19 @@ async def get_store_by_shop(
     db: Session = Depends(get_db),
 ):
     store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop).first()
+    
+    # 🔥 NAYA: Agar naya store hai toh 7-day Basic trial set karo
     if not store:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Store '{shop}' is not connected. Please install the app first."
+        store = ShopifyStore(
+            shop_domain=shop,
+            plan="basic",
+            plan_status="active",
+            trial_ends_at=datetime.utcnow() + timedelta(days=7)
         )
+        db.add(store)
+        db.commit()
+        db.refresh(store)
+        print(f"✅ New store created with 7-day trial: {shop}", flush=True)
 
     if not store.shopify_location_id:
         try:
@@ -41,11 +50,20 @@ async def get_store_by_shop(
         except Exception as e:
             print(f"⚠️ Could not backfill location for {shop}: {e}", flush=True)
 
+    # 🔥 NAYA: Trial days left calculate karo
+    days_left = 0
+    if store.trial_ends_at:
+        delta = store.trial_ends_at - datetime.utcnow()
+        days_left = max(0, delta.days)
+
+    # 🔥 NAYA: Product limit based on plan
+    product_limit = 10000 if (store.plan or "basic").lower() == "advance" else 1000
+
     return {
         "id": store.id,
         "shop_domain": store.shop_domain,
-         "plan": (store.plan or "basic").lower(),
-          "plan_status": (store.plan_status or "active").lower(),  
+        "plan": (store.plan or "basic").lower(),
+        "plan_status": (store.plan_status or "active").lower(),
         "location_id": store.shopify_location_id,
         "markup": store.default_markup or 0.0,
         "markup_type": store.default_markup_type or "fixed",
@@ -53,6 +71,12 @@ async def get_store_by_shop(
         "tax_rate": store.default_tax_rate or 0.0,
         "default_stock_qty": store.default_stock_qty or 0,
         "connected": True,
+        
+        # 🔥 NAYA: Trial aur Limit fields
+        "trial_ends_at": store.trial_ends_at.isoformat() if store.trial_ends_at else None,
+        "days_left_in_trial": days_left,
+        "product_count": store.product_count or 0,
+        "product_limit": product_limit,
     }
 
 
@@ -100,9 +124,6 @@ def get_dashboard_stats(
 # ============================================
 # ✅ Saare Products Fetch Karne Ka Endpoint
 # ============================================
-# ============================================
-# ✅ Saare Products Fetch Karne Ka Endpoint
-# ============================================
 @router.get("/products")
 def get_all_products(
     store_id: int = Query(None, description="Filter by store ID"),
@@ -115,7 +136,7 @@ def get_all_products(
 
         products = query.order_by(Product.id.desc()).all()
 
-        # 🔥 NAYA: Store-level auto_sync fetch karo (single query, N+1 avoid)
+        # 🔥 Store-level auto_sync fetch karo
         store_auto_sync_map = {}
         store_ids = {p.shopify_store_id for p in products if p.shopify_store_id}
         if store_ids:
@@ -137,7 +158,6 @@ def get_all_products(
                 "is_available": bool(p.is_available),
                 "status": "Active" if p.is_available else "Out of Stock",
                 "image": getattr(p, 'image_url', None),
-                # ✅ Store-level value use karo
                 "auto_sync": store_auto_sync_map.get(p.shopify_store_id, False),
             })
 
@@ -153,11 +173,9 @@ def get_all_products(
 # ============================================
 @router.get("/auto-sync/status")
 def get_auto_sync_status(
-    store: ShopifyStore = Depends(get_store_or_404),   # 🔥 404 guard only
+    store: ShopifyStore = Depends(get_store_or_404),
     db: Session = Depends(get_db),
 ):
-    # Basic user ko 403 nahi dena — sirf `false` return karna hai
-    # taaki frontend gracefully handle kar sake (toggle hide ho jayega)
     if (store.plan or "").lower() != "advance":
         return {"enabled": False}
 
@@ -171,10 +189,9 @@ def get_auto_sync_status(
 @router.post("/auto-sync/toggle")
 def toggle_auto_sync(
     payload: AutoSyncToggleRequest,
-    store: ShopifyStore = Depends(require_advance_plan),  # 🔥 403 for Basic
+    store: ShopifyStore = Depends(require_advance_plan),
     db: Session = Depends(get_db),
 ):
-    # store.plan guaranteed 'advance' yahan
     store.auto_sync_enabled = payload.enabled
     db.commit()
 
@@ -189,17 +206,11 @@ def toggle_auto_sync(
 # ============================================
 @router.post("/manual-sync")
 async def trigger_manual_sync(
-    store: ShopifyStore = Depends(require_advance_plan),  # 🔥 403 for Basic
+    store: ShopifyStore = Depends(require_advance_plan),
     db: Session = Depends(get_db),
 ):
-    # store.plan guaranteed 'advance' yahan
     try:
-        # 🔴 Yahan apna actual sync function call karo:
-        # from app.services.sync import run_full_sync
-        # await run_full_sync(store)
-
         print(f"🔄 Manual sync triggered for store {store.shop_domain}", flush=True)
-
         return {
             "status": "success",
             "message": "Manual sync started successfully. It will run in the background."

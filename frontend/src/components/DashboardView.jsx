@@ -1,11 +1,11 @@
 // src/components/DashboardView.jsx
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2 } from 'lucide-react';
+import { Search, RefreshCw, ExternalLink, Trash2, Plus, Package, Loader2, AlertTriangle } from 'lucide-react';
 import CollectionSelector from './CollectionSelector';
 
 export default function DashboardView({ 
-  // ✅ Form ke liye props (jo App.jsx se aayenge)
+  // ✅ Form ke liye props
   url, setUrl, loading, onSubmit,
   collections, selectedCollections, setSelectedCollections,
   markup, markupType, extraPercent, taxRate,
@@ -15,8 +15,11 @@ export default function DashboardView({
   API_URL,
   selectedStoreId,
 
-  // 🔥 NAYA: plan prop
+  // 🔥 NAYE PROPS (Plan & Limit)
   isAdvance,
+  isExpired,
+  productCount = 0,
+  productLimit = 1000,
 }) {
   const [products, setProducts] = useState([]);
   const [fetchingProducts, setFetchingProducts] = useState(true);
@@ -58,13 +61,6 @@ export default function DashboardView({
     fetchAllProducts();
   }, [API_URL, selectedStoreId]);
 
-  // 🔥 Auto-Sync status sirf Advance user ke liye fetch karo
-  useEffect(() => {
-    if (!isAdvance) return;
-    // agar future mein auto-sync status API call add karo, yahan guard hai
-    // fetchAutoSyncStatus();
-  }, [isAdvance]);
-
   const handleCollectionToggle = (id) => {
     if (selectedCollections.includes(id)) {
       setSelectedCollections(selectedCollections.filter(cId => cId !== id));
@@ -73,11 +69,24 @@ export default function DashboardView({
     }
   };
 
-  // ✅ Import Handler (form submit karne par)
+  // ✅ Import Handler (Limit Check ke saath)
   const handleDashboardImport = (e) => {
     e.preventDefault();
+    
+    // 🔥 FIX 1: Expired Check
+    if (isExpired) {
+      alert("Your trial has expired. Please subscribe to a plan to import products.");
+      return;
+    }
+
+    // 🔥 FIX 2: Product Limit Check
+    if (productCount >= productLimit) {
+      alert(`You have reached your product limit (${productLimit}). Please upgrade to the Advance plan.`);
+      return;
+    }
+
     if (url.trim()) {
-      onSubmit(url); // App.jsx ka handleModalImport call hoga
+      onSubmit(url); 
     }
   };
 
@@ -96,11 +105,42 @@ export default function DashboardView({
     return matchesSearch;
   });
 
+  // 🔥 Limit percentage calculate karo
+  const usagePercent = Math.min(100, (productCount / productLimit) * 100);
+
   return (
     <div className="space-y-6">
       
-      {/* ✅ 1. INLINE IMPORT FORM */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto">
+      {/* 🔥 1. PRODUCT USAGE BAR (Sirf tab dikhao jab count > 0 ho) */}
+      {productCount > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 w-full max-w-3xl mx-auto">
+          <div className="flex justify-between items-center mb-2 text-sm">
+            <span className="font-semibold text-gray-700">Product Usage ({isAdvance ? 'Advance' : 'Basic'} Plan)</span>
+            <span className={`font-bold ${usagePercent > 90 ? 'text-red-600' : 'text-gray-600'}`}>
+              {productCount} / {productLimit}
+            </span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-2.5">
+            <div 
+              className={`h-2.5 rounded-full transition-all ${usagePercent > 90 ? 'bg-red-500' : usagePercent > 75 ? 'bg-orange-400' : 'bg-green-500'}`} 
+              style={{ width: `${usagePercent}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 2. INLINE IMPORT FORM */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 w-full max-w-3xl mx-auto relative overflow-hidden">
+        
+        {/* 🔥 Expired Overlay (Agar expired hai toh form block dikhao) */}
+        {isExpired && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-xl">
+            <AlertTriangle className="text-red-500 mb-2" size={32} />
+            <p className="font-bold text-gray-800">Your trial has expired</p>
+            <p className="text-sm text-gray-500">Please subscribe to a plan to continue importing.</p>
+          </div>
+        )}
+
         <form onSubmit={handleDashboardImport} className="space-y-5">
           
           {/* URL Section */}
@@ -114,7 +154,7 @@ export default function DashboardView({
               className="w-full p-3 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 outline-none resize-none"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              disabled={loading}
+              disabled={loading || isExpired}
             />
             <p className="text-xs text-gray-500 mt-1">Supports single URLs or comma-separated ASINs.</p>
           </div>
@@ -140,7 +180,7 @@ export default function DashboardView({
               <button 
                 type="button"
                 onClick={onToggleAutoSync}
-                disabled={loading}
+                disabled={loading || isExpired}
                 className={`w-10 h-5 rounded-full relative transition-colors ${
                   isAutoSyncEnabled ? 'bg-[#008060]' : 'bg-gray-300'
                 }`}
@@ -162,18 +202,18 @@ export default function DashboardView({
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
             <button 
               type="submit"
-              disabled={loading || !url.trim()}
+              disabled={loading || !url.trim() || isExpired || productCount >= productLimit}
               className="px-5 py-2.5 text-sm font-medium bg-[#008060] hover:bg-[#006e52] text-white rounded-lg flex items-center gap-2 disabled:opacity-50"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {loading ? 'Importing...' : 'Import Product'}
+              {loading ? 'Importing...' : productCount >= productLimit ? 'Limit Reached' : 'Import Product'}
             </button>
           </div>
 
         </form>
       </div>
 
-      {/* ✅ 2. PRODUCTS TABLE SECTION */}
+      {/* ✅ 3. PRODUCTS TABLE SECTION */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
