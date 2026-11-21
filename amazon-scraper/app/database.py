@@ -26,4 +26,8 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        # 🔥 FIX: Safe close (agar connection already dead ho toh ignore karo)
+        try:
+            db.close()
+        except Exception:
+            pass
