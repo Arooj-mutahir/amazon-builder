@@ -1,6 +1,7 @@
 # app/worker/variants_product.py
 import re
 import traceback
+import asyncio
 from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product_with_variants, publish_product, add_product_to_collections, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
@@ -16,13 +17,14 @@ async def process_multi_variant(
     compare_price_markup: float = 0.0
 ):
     
-    # ✅ Compare Price
+    # ✅ 1. Compare Price Logic
     if compare_price_markup > 0:
         final_price = shopify_payload.get("price", 0.0)
         compare_price = final_price * (1 + (compare_price_markup / 100.0))
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
+    # ✅ 2. Title & Handle Logic
     clean_variants = reorder_variants_for_default(clean_variants, main_data.get("asin"))
     raw_amazon_title = main_data.get("title") or "Untitled Product"
     shopify_payload["original_title"] = raw_amazon_title
@@ -45,49 +47,14 @@ async def process_multi_variant(
     shopify_payload["handle"] = final_handle
 
     # ==========================================
-    # 🔥 STEP 1: PREPARE TOKEN & RELEASE DB CONNECTION BEFORE SHOPIFY API
-    # ==========================================
-    token = await _get_valid_access_token(store, db)
-    store_id = store.id
-
-    # 🛑 CRITICAL FIX: Shopify API calls (50+ images upload & variant creation) take 1-3 minutes.
-    # Agar DB session ko open rakha jaye to PostgreSQL 'idle in transaction timeout' se connection kill kar deta hai.
-    if db is not None:
-        try:
-            db.commit()
-        except Exception:
-            pass
-        try:
-            db.close()
-        except Exception:
-            pass
-
-    shopify_id = None
-    print(f"🚀 [Shopify] Attempting to create product on Shopify...", flush=True)
-    try:
-        result = await create_shopify_product_with_variants(
-            shop=shop_domain, access_token=token,
-            product_data=shopify_payload, variants_raw=clean_variants,
-            markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
-        )
-        if result and "data" in result:
-            shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
-            print(f"✅ [Shopify] Product created with ID: {shopify_id}", flush=True)
-        else:
-            print(f"⚠️ [Shopify] Product creation failed or returned no ID. Proceeding with DB save only.", flush=True)
-    except Exception as e:
-        print(f"❌ [Shopify] API crashed: {e}", flush=True)
-        traceback.print_exc()
-
-    # ==========================================
-    # 🔥 STEP 2 & 3: FRESH DB SESSION SE PARENT & CHILD SAVE KARO
+    # 🔥 3. DB SAVE (PEHLE SAVE KARO, SHOPIFY SE PEHLE)
     # ==========================================
     db_save = SessionLocal()
     parent_asin_upper = main_data["asin"].upper()
     saved_variants_count = 0
 
     try:
-        # --- PARENT PRODUCT SAVE ---
+        # --- Parent Product Save ---
         new_product = db_save.query(Product).filter(Product.asin == parent_asin_upper).first()
         
         parent_available = _get_availability(main_data)
@@ -106,14 +73,14 @@ async def process_multi_variant(
                 amazon_price=main_data.get("price"), price=shopify_payload["price"],
                 markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
                 variant_attributes=main_data.get("variant_attributes") or [], categories=extracted_categories,
-                tags=final_tags, shopify_store_id=store_id, shopify_status="pending" if not shopify_id else "active",
-                shopify_product_id=shopify_id, shopify_handle=final_handle,
+                tags=final_tags, shopify_store_id=store.id, shopify_status="pending",
+                shopify_handle=final_handle,
             )
             db_save.add(new_product)
+            print(f"✅ [DB] Parent product saved in DB!", flush=True)
         else:
-            new_product.shopify_product_id = shopify_id
-            new_product.shopify_store_id = store_id
-            new_product.shopify_status = "pending" if not shopify_id else "active"
+            new_product.shopify_store_id = store.id
+            new_product.shopify_status = "pending"
             new_product.price = shopify_payload["price"]
             new_product.amazon_price = main_data.get("price")
             new_product.title = main_data.get("title")
@@ -133,20 +100,18 @@ async def process_multi_variant(
             new_product.categories = extracted_categories
             new_product.tags = final_tags
             new_product.shopify_handle = final_handle
+            print(f"✅ [DB] Parent product updated in DB!", flush=True)
         
         db_save.commit()
         db_save.refresh(new_product)
-        print(f"✅ [DB SUCCESS] Parent saved in DB! ID: {new_product.id}", flush=True)
+        saved_variants_count += 1
 
-        # --- CHILD PRODUCTS SAVE ---
-        # 🔥 FIX: Total variants count (default + children)
-        saved_variants_count = len(clean_variants)  # Total variants including default
-
+        # --- Child Products Save (Loop) ---
         for v in clean_variants:
             try:
                 v_asin_upper = v.get("asin", "").upper()
                 if not v_asin_upper or v_asin_upper == parent_asin_upper:
-                    continue  # Default variant already counted in len()
+                    continue
 
                 v_amazon_price = v.get("price") or main_data.get("price") or 0.0
                 v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
@@ -167,46 +132,104 @@ async def process_multi_variant(
                         amazon_price=float(v_amazon_price), price=float(v_final_price),
                         markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
                         variant_attributes=v.get("option_values") or [], categories=extracted_categories, tags=final_tags,
-                        shopify_product_id=shopify_id, shopify_store_id=store_id, 
-                        shopify_status="pending" if not shopify_id else "active", shopify_handle=final_handle,
+                        shopify_store_id=store.id, shopify_status="pending", shopify_handle=final_handle,
                     )
                     db_save.add(child_product)
                 else:
-                    child_existing.shopify_product_id = shopify_id
-                    child_existing.shopify_store_id = store_id
-                    child_existing.shopify_status = "pending" if not shopify_id else "active"
+                    child_existing.shopify_store_id = store.id
+                    child_existing.shopify_status = "pending"
                     child_existing.price = float(v_final_price)
                     child_existing.amazon_price = float(v_amazon_price)
                     child_existing.stock_quantity = int(v_resolved)
                     child_existing.is_available = v_in_stock
                     child_existing.availability = v_avail
+                
+                db_save.commit()
+                saved_variants_count += 1
 
             except Exception as e:
-                print(f"⚠️ Variant {v.get('asin')} DB prepare failed: {e}", flush=True)
+                db_save.rollback()
+                print(f"⚠️ Variant {v.get('asin')} DB save failed: {e}", flush=True)
 
-        db_save.commit()
-
-        # 🔥 FIX: Update product count on store (saved_variants_count already includes default variant)
-        store_db = db_save.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+        # Store count update
+        store_db = db_save.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
         if store_db:
             store_db.product_count = (store_db.product_count or 0) + saved_variants_count
             db_save.commit()
-            print(f"📈 [DB SUCCESS] Product count updated: {store_db.product_count} (+{saved_variants_count})", flush=True)
+            print(f"📈 [DB] Product count updated: {store_db.product_count} (+{saved_variants_count})", flush=True)
 
     except Exception as e:
         db_save.rollback()
         print(f"❌ [DB ERROR] Save Failed: {e}", flush=True)
         traceback.print_exc()
+        return # DB fail hui toh aage mat badho
     finally:
-        try:
-            db_save.close()
-        except Exception:
-            pass
+        db_save.close()
 
     # ==========================================
-    # 🔥 STEP 4: POST-SHOPIFY TASKS (Sirf agar product bana hai)
+    # 🔥 4. SHOPIFY API CALL (Ab DB save ho chuka hai)
+    # ==========================================
+    print(f"🚀 [Shopify] Creating product with {len(clean_variants)} variants...", flush=True)
+    
+    # Fresh DB session for token (taaki koi connection idle na rahe)
+    token_db = SessionLocal()
+    try:
+        store_token = token_db.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
+        token = await _get_valid_access_token(store_token, token_db, force_refresh=True)
+    finally:
+        token_db.close()
+
+    shopify_id = None
+    try:
+        # Yahan hum Shopify API call karenge. 
+        # Agar 68 variants ek saath fail ho rahe hain, toh hum isko chunks mein bhejenge.
+        # Lekin abhi ke liye direct call karte hain.
+        result = await create_shopify_product_with_variants(
+            shop=shop_domain, access_token=token,
+            product_data=shopify_payload, variants_raw=clean_variants,
+            markup_val=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax
+        )
+        
+        if result and "data" in result:
+            shopify_id = result.get("data", {}).get("productCreate", {}).get("product", {}).get("id")
+            print(f"✅ [Shopify] Product created with ID: {shopify_id}", flush=True)
+        else:
+            print(f"⚠️ [Shopify] Product creation failed. Error: {result}", flush=True)
+    except Exception as e:
+        print(f"❌ [Shopify] API crashed: {e}", flush=True)
+        traceback.print_exc()
+
+    # ==========================================
+    # 🔥 5. UPDATE DB WITH SHOPIFY IDS
     # ==========================================
     if shopify_id:
+        update_db = SessionLocal()
+        try:
+            parent_db = update_db.query(Product).filter(Product.asin == parent_asin_upper).first()
+            if parent_db:
+                parent_db.shopify_product_id = shopify_id
+                parent_db.shopify_status = "active"
+            
+            # Update child variants
+            for v in clean_variants:
+                v_asin = v.get("asin", "").upper()
+                if v_asin and v_asin != parent_asin_upper:
+                    child_db = update_db.query(Product).filter(Product.asin == v_asin).first()
+                    if child_db:
+                        child_db.shopify_product_id = shopify_id
+                        child_db.shopify_status = "active"
+            
+            update_db.commit()
+            print(f"✅ [DB] Shopify IDs updated in DB. Status = active", flush=True)
+        except Exception as e:
+            update_db.rollback()
+            print(f"⚠️ [DB] Failed to update Shopify IDs: {e}", flush=True)
+        finally:
+            update_db.close()
+
+        # ==========================================
+        # 🔥 6. PUBLISH & COLLECTIONS (Sirf agar Shopify ID mili)
+        # ==========================================
         try:
             await publish_product(shop_domain, token, shopify_id)
             print(f"✅ Product Published", flush=True)
@@ -229,3 +252,5 @@ async def process_multi_variant(
                 await set_product_metafields_smart(shop=shop_domain, access_token=token, product_id=shopify_id, raw_details=raw_details)
         except Exception as e:
             print(f"⚠️ Metafields failed: {e}", flush=True)
+    else:
+        print(f"⚠️ Product was not created on Shopify. DB records are in 'pending' state.", flush=True)
