@@ -1,5 +1,23 @@
 import re
 
+def _get_availability(v_raw: dict):
+    val = v_raw.get("is_available")
+    if val is None:
+        val = v_raw.get("in_stock")
+    return val
+
+def _resolve_stock(available, stock_qty, default_stock_qty: int = 0) -> int | None:
+    if available is None:
+        return None
+    if not available:
+        return 0
+    if stock_qty is None:
+        return int(default_stock_qty)
+    try:
+        return int(stock_qty)
+    except (TypeError, ValueError):
+        return int(default_stock_qty)
+
 def _extract_stock(raw_product: dict, raw_html: str = None):
     print("\n🔍 [DEBUG] _extract_stock shuru hua...", flush=True)
     
@@ -10,33 +28,54 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
     html_lower = raw_html.lower()
     print(f"✅ [DEBUG] HTML length: {len(html_lower)}", flush=True)
 
+    # 1. BOT / CAPTCHA CHECK
+    if "javascript is disabled" in html_lower or "not a robot" in html_lower or "validatecaptcha" in html_lower:
+        print("❌ [BOT DETECTED] Amazon ne Captcha/Bot page bheja hai. Stock 0 rakha ja raha hai.", flush=True)
+        return False, 0
+
+    # 2. OUT OF STOCK CHECK (Text Based)
+    if "currently unavailable" in html_lower or "out of stock" in html_lower:
+        print("❌ [DEBUG] 'Currently unavailable' ya 'Out of Stock' text mila -> False, 0", flush=True)
+        return False, 0
+
     if 'see all buying options' in html_lower or 'available at a lower price from other sellers' in html_lower:
         print("❌ [DEBUG] 'Other sellers' mila -> False, 0", flush=True)
         return False, 0
-    print("✅ [DEBUG] 'Other sellers' check pass", flush=True)
 
-    real_button_pattern = r'<span[^>]*\bid=["\']submit\.add-to-cart["\'][^>]*>.*?<input[^>]*\bid=["\']add-to-cart-button["\'][^>]*>'
+    # 3. STRICT BUTTON CHECK
+    # Sirf 'add-to-cart-button' dhundh rahe hain (purana submit.add-to-cart hata diya)
+    button_pattern = r'<input[^>]*id=["\']add-to-cart-button["\'][^>]*>'
+    matches = list(re.finditer(button_pattern, raw_html, re.IGNORECASE))
     
-    match = re.search(real_button_pattern, raw_html, re.IGNORECASE | re.DOTALL)
-    
-    if match:
-        print("✅ [DEBUG] Asli button match mil gaya!", flush=True)
-        
+    if not matches:
+        print("❌ [DEBUG] Koi bhi 'add-to-cart-button' nahi mila -> False, 0", flush=True)
+        return False, 0
+
+    is_visible = False
+    for match in matches:
+        # Button ke 1000 chars pehle ka context dekho
         start_idx = max(0, match.start() - 1000)
         context = html_lower[start_idx:match.start()]
         
-        if 'display: none' in context or 'aok-hidden' in context:
-            print("❌ [DEBUG] Parent 'display: none' ya 'aok-hidden' mein hai -> False, 0", flush=True)
-            return False, 0
-            
-        print("✅ [DEBUG] Button visible hai -> True, 100", flush=True)
-        return True, 100
-    else:
-        print("⚠️ [DEBUG] Asli button match NAHI mila (regex fail)", flush=True)
+        # Skip hidden or nav-assist buttons
+        if 'nav-assist' in context or 'display: none' in context or 'aok-hidden' in context:
+            print("⚠️ [DEBUG] Ek hidden/nav-assist button mila, skip kar rahe hain...", flush=True)
+            continue
+        
+        # Button tag khud hidden toh nahi?
+        button_tag = match.group(0).lower()
+        if 'display: none' in button_tag or 'visibility: hidden' in button_tag or 'aria-hidden="true"' in button_tag:
+            print("⚠️ [DEBUG] Button tag mein hi hidden hai, skip...", flush=True)
+            continue
 
-    if 'primary-availability-message' in html_lower and 'in stock' in html_lower:
-        print("✅ [DEBUG] 'In Stock' text mila -> True, 100", flush=True)
+        # Agar sab pass ho gaya, matlab button visible hai
+        is_visible = True
+        print("✅ [DEBUG] Asli visible 'Add to Cart' button mil gaya -> True, 100", flush=True)
+        break
+
+    if is_visible:
         return True, 100
 
-    print("❌ [DEBUG] Kuch bhi nahi mila -> False, 0", flush=True)
+    # Fallback: Agar button toh hai par hidden hai
+    print("❌ [DEBUG] Button hidden hai (out of stock) -> False, 0", flush=True)
     return False, 0
