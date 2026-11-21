@@ -1,6 +1,34 @@
+# app/worker/stock_utils.py
 import re
 
+def _get_availability(v_raw: dict):
+    """Check if product is available."""
+    val = v_raw.get("is_available")
+    if val is None:
+        val = v_raw.get("in_stock")
+    return val
+
+
+def _resolve_stock(available, stock_qty, default_stock_qty: int = 0) -> int | None:
+    """Resolve stock quantity based on availability."""
+    if available is None:
+        return None
+    if not available:
+        return 0
+    if stock_qty is None:
+        return int(default_stock_qty)
+    try:
+        return int(stock_qty)
+    except (TypeError, ValueError):
+        return int(default_stock_qty)
+
+
 def _extract_stock(raw_product: dict, raw_html: str = None):
+    """
+    Amazon HTML se stock extract karta hai.
+    Add to Cart button visible -> True, 100
+    Hidden ya Other Sellers -> False, 0
+    """
     print("\n🔍 [DEBUG] _extract_stock shuru hua...", flush=True)
     
     if not raw_html:
@@ -17,7 +45,7 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         print("❌ [DEBUG] 'Other sellers' mila -> False, 0", flush=True)
         return False, 0
 
-    # 2. Ab asli button dhundho (jisme humne pehle wala "nav-assist" filter lagaya tha)
+    # 2. Ab asli button dhundho
     button_pattern = r'<(?:input|span)[^>]*id=["\'](?:add-to-cart-button|submit\.add-to-cart)["\'][^>]*>'
     matches = list(re.finditer(button_pattern, raw_html, re.IGNORECASE))
     
@@ -27,7 +55,6 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
 
     is_visible = False
     for match in matches:
-        # Button ke aage ka HTML (500 chars) uthao
         start_idx = max(0, match.start() - 500)
         context = html_lower[start_idx:match.start()]
         
@@ -39,18 +66,11 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         if 'display: none' in button_tag or 'visibility: hidden' in button_tag or 'aria-hidden="true"' in button_tag:
             continue
 
-        # Agar yahan tak pahunche, matlab button asli aur visible hai
         is_visible = True
         break
 
     if is_visible:
         print("✅ [DEBUG] Asli visible 'Add to Cart' button mil gaya -> True, 100", flush=True)
-        return True, 100
-
-    # 3. Fallback: Agar button toh mila par hidden tha, aur upar out-of-stock text bhi nahi tha
-    # Toh check karo ki kahin "In Stock" toh nahi likha
-    if 'in stock' in html_lower and 'primary-availability-message' in html_lower:
-        print("✅ [DEBUG] 'In Stock' message mila -> True, 100", flush=True)
         return True, 100
 
     print("❌ [DEBUG] Kuch bhi confirm nahi hua (default out of stock) -> False, 0", flush=True)
