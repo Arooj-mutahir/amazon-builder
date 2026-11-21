@@ -4,7 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.database import SessionLocal
-from app.models import ShopifyStore
+from app.models import ShopifyStore, Product
 from app.services.amazon_bridge import get_shopify_product_data
 
 from app.worker.single_product import process_single_variant
@@ -24,13 +24,24 @@ async def _background_fetch_and_push(
     print(f"\n🔥🔥🔥 BACKGROUND JOB STARTED for {amazon_url} 🔥🔥🔥", flush=True)
 
     # ============================================================
-    # PHASE 1: Store fetch karo
+    # PHASE 1: Store fetch & LIMIT CHECK
     # ============================================================
     db = SessionLocal()
     try:
         store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
         if not store:
             print("❌ Store not found", flush=True)
+            return
+
+        # 🔥 PLAN LIMIT CHECK
+        if (store.plan or "").lower() == "basic":
+            limit = 1000
+        else:
+            limit = 10000
+
+        current_count = store.product_count or 0
+        if current_count >= limit:
+            print(f"🚫 LIMIT REACHED: Store {store.shop_domain} has {current_count}/{limit} products. Import blocked.", flush=True)
             return
 
         asin_quick = extract_asin_from_url(amazon_url)
@@ -45,13 +56,11 @@ async def _background_fetch_and_push(
         print(f"⚙️ [UI FETCH] Markup={user_markup}, Type={user_markup_type}, Extra={user_extra}%, Tax={user_tax}%, Compare={compare_price_markup}%", flush=True)
         default_stock_qty = getattr(store, "default_stock_qty", 0) or 0
 
-        # Store data local variables mein copy karo
         store_id_local = store.id
         store_domain_local = store.shop_domain
         store_plan = store.plan
 
     finally:
-        # 🔥 Scraping se PEHLE DB band karo
         db.close()
 
     # ============================================================
@@ -133,6 +142,17 @@ async def _background_fetch_and_push(
             print("❌ Store disappeared during scraping", flush=True)
             return
 
+        # 🔥 RE-CHECK LIMIT (Kyunki scraping ke dauran koi aur import kar sakta hai)
+        if (store_fresh.plan or "").lower() == "basic":
+            limit = 1000
+        else:
+            limit = 10000
+
+        current_count = store_fresh.product_count or 0
+        if current_count >= limit:
+            print(f"🚫 LIMIT REACHED DURING SCRAPE: {current_count}/{limit}. Import blocked.", flush=True)
+            return
+
         if clean_variants and len(clean_variants) > 0:
             print(f"🆕 Creating MULTI-VARIANT product with {len(clean_variants)} variants...", flush=True)
             await process_multi_variant(
@@ -151,10 +171,15 @@ async def _background_fetch_and_push(
                 final_tags=final_tags, extracted_categories=extracted_categories, 
                 shopify_payload=shopify_payload, shop_domain=shop_domain, db=db2, default_stock_qty=default_stock_qty,
                 compare_price_markup=compare_price_markup,
-                collection_ids=collection_ids  # 🔥 YEH LINE ADD KI HAI
+                collection_ids=collection_ids
             )
+
+        # 🔥 PRODUCT COUNT UPDATE
+        variants_count = len(clean_variants) if clean_variants else 1
+        store_fresh.product_count = (store_fresh.product_count or 0) + variants_count
+        db2.commit()
+        print(f"📈 Product count updated: {store_fresh.product_count}/{limit}", flush=True)
         
-        # 🔥 Data save hone ke baad turant session close karo
         db2.close()
 
     except Exception as e:
@@ -162,7 +187,6 @@ async def _background_fetch_and_push(
         traceback.print_exc()
         db2.rollback()
     finally:
-        # Safe side close
         if db2.is_active:
             db2.close()
 
