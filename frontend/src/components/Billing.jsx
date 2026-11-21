@@ -17,51 +17,43 @@ export default function Billing() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("success") === "true") {
       setSuccessMsg("🎉 Payment successful! You are now on the Advance Plan.");
-      refresh(); // Plan state update
-      // URL se ?success=true hatao taaki page refresh pe wapas na dikhe
-      window.history.replaceState({}, "", window.location.pathname + window.location.search.replace(/[?&]success=true/, "").replace(/^&/, "?"));
+      refresh(); 
+      // URL clean karo
+      const newUrl = window.location.pathname + window.location.search.replace(/[?&]success=true/, "").replace(/^&/, "?");
+      window.history.replaceState({}, "", newUrl);
     } else if (params.get("error")) {
       setErrorMsg("Payment failed or cancelled. Please try again.");
-      window.history.replaceState({}, "", window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, "").replace(/^&/, "?"));
+      const newUrl = window.location.pathname + window.location.search.replace(/[?&]error=[^&]*/, "").replace(/^&/, "?");
+      window.history.replaceState({}, "", newUrl);
     }
   }, [refresh]);
 
-  // 🔥 UPDATED: Shop domain nikalne ka sahi tarika
   const getShopDomain = () => {
     const params = new URLSearchParams(window.location.search);
     let shop = params.get("shop");
-    
     if (!shop) {
       const pathMatch = window.location.pathname.match(/\/store\/([^\/]+)/);
-      if (pathMatch && pathMatch[1]) {
-        shop = `${pathMatch[1]}.myshopify.com`;
-      }
+      if (pathMatch && pathMatch[1]) shop = `${pathMatch[1]}.myshopify.com`;
     }
-    
     return shop || "";
   };
 
   const handleUpgrade = async () => {
     const shop = getShopDomain();
-    if (!shop) {
-      setErrorMsg("Shop domain not found. Please open the app from your Shopify admin dashboard.");
-      return;
-    }
+    if (!shop) return setErrorMsg("Shop domain not found.");
 
     setLoading(true);
     setErrorMsg("");
     setSuccessMsg("");
     try {
       const res = await axios.post(`${API_URL}/billing/upgrade?shop=${shop}`);
-      
       if (res.data?.confirmation_url) {
-        // Payment page pe redirect
         window.open(res.data.confirmation_url, "_top");
       } else {
         setErrorMsg("No payment URL returned from Shopify.");
       }
     } catch (err) {
-      setErrorMsg(err.response?.data?.detail || "Upgrade failed. Check backend.");
+      setErrorMsg(err.response?.data?.detail || "Upgrade failed.");
     } finally {
       setLoading(false);
     }
@@ -69,12 +61,7 @@ export default function Billing() {
 
   const handleDowngrade = async () => {
     const shop = getShopDomain();
-    if (!shop) {
-      setErrorMsg("Shop domain not found.");
-      return;
-    }
-
-    if (!window.confirm("Are you sure you want to downgrade to Basic? You will lose Advance features.")) return;
+    if (!shop || !window.confirm("Are you sure you want to downgrade to Basic? You will lose Advance features.")) return;
 
     setLoading(true);
     setErrorMsg("");
@@ -104,8 +91,9 @@ export default function Billing() {
         <li className="flex items-center gap-2"><CheckCircle2 size={18} className="text-green-500" /> Size Chart & Metafields</li>
       </ul>
 
+      {/* 🔥 FIX: Success/Error Messages */}
       {successMsg && (
-        <div className="mb-4 p-3 bg-green-50 text-green-700 text-sm rounded-lg border border-green-200 text-left">
+        <div className="mb-4 p-3 bg-green-50 text-green-700 text-sm rounded-lg border border-green-200 text-left font-medium">
           {successMsg}
         </div>
       )}
@@ -116,7 +104,19 @@ export default function Billing() {
         </div>
       )}
 
-      {isAdvance ? (
+      {/* 🔥 FIX: Ab dono messages ek saath nahi dikhenge */}
+      {successMsg ? (
+        // Agar abhi-abhi upgrade hua hai, toh sirf Downgrade button dikhao
+        <button 
+          onClick={handleDowngrade} 
+          disabled={loading}
+          className="w-full bg-red-50 text-red-600 border border-red-200 py-3 rounded-lg font-bold hover:bg-red-100 transition disabled:opacity-50 flex justify-center items-center gap-2"
+        >
+          {loading ? <Loader2 className="animate-spin" size={18} /> : <TrendingDown size={18} />}
+          {loading ? "Processing..." : "Downgrade to Basic"}
+        </button>
+      ) : isAdvance ? (
+        // Agar pehle se Advance hai, toh message + Downgrade dikhao
         <div className="space-y-4">
           <div className="bg-green-100 text-green-700 p-3 rounded-lg font-medium">
             ✅ You are already on the Advance Plan!
@@ -131,6 +131,7 @@ export default function Billing() {
           </button>
         </div>
       ) : (
+        // Agar Basic hai, toh Upgrade dikhao
         <button 
           onClick={handleUpgrade} 
           disabled={loading}
