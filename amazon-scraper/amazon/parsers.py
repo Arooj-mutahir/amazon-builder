@@ -809,77 +809,26 @@ def _delivery(doc):
 
 def _is_real_atc_visible(doc, html_text: str) -> bool:
     """
-    Returns True ONLY when Amazon is directly selling the product with a
-    visible 'Add to Cart' button.
-
-    Two-step logic:
-    STEP A — Page-level hard signals (fast text check, no DOM needed):
-        • Captcha/bot page       → False
-        • "Currently unavailable" → False
-        • "See all buying options" / "Other sellers" anywhere on page → False
-          (Amazon is NOT the direct seller; ATC button in DOM is a ghost form)
-
-    STEP B — DOM check: id="add-to-cart-button" must exist, be visible,
-        and NOT be inside a nav-assist / hidden container.
+    Sirf check karta hai ke id="add-to-cart-button" aur name="submit.add-to-cart"
+    wala button visible hai ya hidden.
     """
-    html_lower = html_text.lower()
-
     # ── STEP A-1: Bot / Captcha ─────────────────────────────────────────
-    captcha_sigs = [
-        "validatecaptcha", "not a robot",
-        "api-services-support@amazon.com", "robot check",
-    ]
+    html_lower = html_text.lower()
+    captcha_sigs = ["validatecaptcha", "not a robot", "api-services-support@amazon.com", "robot check"]
     if any(s in html_lower for s in captcha_sigs):
         print("[STOCK][BOT] Captcha/bot page → False", flush=True)
         return False
 
-    # ── STEP A-2: Explicit out-of-stock text ────────────────────────────
-    oos_sigs = [
-        "currently unavailable",
-        "we don't know when or if this item will be back in stock",
-        "not available for purchase",
-    ]
-    if any(s in html_lower for s in oos_sigs):
-        print("[STOCK][OOS] Explicit OOS text → False", flush=True)
-        return False
-
-    # ── STEP A-3: "See All Buying Options" = Amazon NOT direct seller ───
-    # Amazon still renders id="add-to-cart-button" in DOM even on these pages
-    # (inside a hidden ghost form). We must reject the page BEFORE DOM check.
-    # This is the fix for the false-positive on B07RPR83DV type pages.
-    buying_opts_sigs = [
-        "see all buying options",
-        "available at a lower price from other sellers",
-        "other sellers on amazon",
-    ]
-    # Check ONLY inside the visible buybox area (not buried in JS/scripts)
-    # We use the #desktop_buybox / #buybox / #apex_desktop text, not full html
-    buybox_el = (
-        doc.find(id="desktop_buybox")
-        or doc.find(id="buybox")
-        or doc.find(id="apex_desktop")
-        or doc.find(id="centerCol")  # fallback container
-    )
-    buybox_text = (buybox_el.get_text(" ", strip=True).lower() if buybox_el else "")
-
-    # Also check the full html_lower for these signals — they are unique enough
-    if any(s in buybox_text for s in buying_opts_sigs) or \
-       any(s in html_lower for s in buying_opts_sigs):
-        print("[STOCK][BUYING-OPTS] 'See All Buying Options'/'Other Sellers' found → False", flush=True)
-        return False
-
     # ── STEP B: DOM check for real visible ATC button ───────────────────
-    candidates = doc.find_all(
-        ["input", "button"],
-        id=re.compile(r"^add-to-cart-button$", re.IGNORECASE),
-    )
-    if not candidates:
-        candidates = doc.find_all(
-            id=re.compile(r"^submit\.add-to-cart$", re.IGNORECASE)
-        )
+    # ✅ id aur name dono match hone chahiye
+    candidates = [
+        tag for tag in doc.find_all(["input", "button"])
+        if (tag.get("id") or "").strip() == "add-to-cart-button"
+        and (tag.get("name") or "").strip() == "submit.add-to-cart"
+    ]
 
     if not candidates:
-        print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
+        print("[STOCK] No id='add-to-cart-button' & name='submit.add-to-cart' in DOM → False", flush=True)
         return False
 
     for tag in candidates:
