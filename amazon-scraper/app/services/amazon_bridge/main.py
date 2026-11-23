@@ -3,12 +3,6 @@ import httpx
 import asyncio
 import logging
 from app.services.amazon_bridge.stock_extractor import extract_stock_from_html
-from app.services.amazon_bridge.reviews import extract_top_reviews
-from app.services.amazon_bridge.images import extract_images
-from app.services.amazon_bridge.description import extract_description
-from app.services.amazon_bridge.helpers import clean_html_text
-from app.services.amazon_bridge.specifications import extract_specifications
-from app.services.amazon_bridge.size_chart import extract_size_chart
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +18,16 @@ async def get_shopify_product_data(asin: str) -> dict:
             if not data or "asin" not in data:
                 raise Exception(f"Custom Scraper se sahi data nahi mila: {asin}")
 
-            # 1. Images
-            images_list = extract_images(data.get("images", []))
+            # 1. Images (Custom scraper se direct)
+            images_list = []
+            if data.get("images"):
+                for img in data["images"]:
+                    if isinstance(img, dict) and img.get("link"):
+                        images_list.append(img["link"])
+                    elif isinstance(img, str):
+                        images_list.append(img)
 
-            # 2. Reviews
-            raw_html = data.get("raw_html", "")
-            reviews_data = extract_top_reviews(raw_html, limit=10, fallback_reviews=data.get("top_reviews", []))
-
-            # 3. Description
-            bullets = data.get("bullets", [])
-            description = extract_description(bullets, data.get("description", ""))
-
-            # 4. Specifications
-            specifications = extract_specifications(data.get("details", {}))
-
-            # 5. Size Chart
-            size_chart = extract_size_chart(data.get("size_chart", ""))
-
-            # 6. Variations
+            # 2. Variations
             variant_attributes = []
             variant_products = []
             variations_data = data.get("variations", {})
@@ -60,11 +46,11 @@ async def get_shopify_product_data(asin: str) -> dict:
                         "is_current": prod.get("is_current", False)
                     })
 
-            # 7. Categories & Brand
+            # 3. Categories & Brand
             categories = [cat.get("name") for cat in data.get("categories", []) if cat.get("name")]
             brand_name = data.get("brand", {}).get("name", "") if isinstance(data.get("brand"), dict) else str(data.get("brand", ""))
 
-            # 8. Price & Rating
+            # 4. Price
             price = 0.0
             list_price = None
             if data.get("price"):
@@ -72,13 +58,29 @@ async def get_shopify_product_data(asin: str) -> dict:
                 if data["price"].get("list_price"):
                     list_price = float(data["price"]["list_price"].get("amount", 0))
 
+            # 5. Rating & Bullets
             rating = data.get("rating", {})
             rating_avg = rating.get("average", 0.0) if isinstance(rating, dict) else 0.0
             reviews_count = rating.get("count", 0) if isinstance(rating, dict) else 0
+            
+            bullets = data.get("bullets", [])
+            bullets_html = ""
+            if bullets:
+                bullets_html = "<ul>\n"
+                for bullet in bullets:
+                    bullets_html += f"  <li>{bullet}</li>\n"
+                bullets_html += "</ul>"
+
+            # 6. Details / Specifications
+            details = data.get("details", {})
+            item_weight = details.get("item_weight") or details.get("package_dimensions", "").split(";")[-1].strip()
+            item_dimensions = details.get("product_dimensions") or details.get("package_dimensions", "").split(";")[0].strip()
 
             # ==========================================
-            # 🔥 9. STOCK CHECK (Custom Scraper ke HTML se)
+            # 🔥 7. STOCK CHECK (Custom Scraper ke HTML se)
             # ==========================================
+            raw_html = data.get("raw_html", "")
+            
             if not raw_html:
                 print(f"⚠️ [STOCK] Custom Scraper ne HTML nahi bheja, direct fields check kar rahe hain...", flush=True)
                 is_available = data.get("is_add_to_cart_visible", False)
@@ -95,10 +97,10 @@ async def get_shopify_product_data(asin: str) -> dict:
 
             print(f"📦 [BRIDGE STOCK] ASIN={asin}, Available={final_available}, Stock={final_stock}", flush=True)
 
-            # 10. Shopify Format Return Karein
+            # 8. Return Data
             return {
                 "title": data.get("title"),
-                "description": description,
+                "description": bullets_html,
                 "brand": brand_name,
                 "images": images_list,
                 "price": price,
@@ -113,13 +115,12 @@ async def get_shopify_product_data(asin: str) -> dict:
                 "tags": categories,
                 "product_type": categories[-1] if categories else "General",
                 "feature_bullets": bullets,
-                "specifications": specifications,
-                "item_weight": data.get("details", {}).get("item_weight"),
-                "item_dimensions": data.get("details", {}).get("product_dimensions"),
+                "specifications": details,
+                "item_weight": item_weight,
+                "item_dimensions": item_dimensions,
                 "rating": rating_avg,
                 "reviews_count": reviews_count,
-                "top_reviews": reviews_data,
-                "size_chart": size_chart,
+                "top_reviews": data.get("top_reviews", []),
             }
 
     except Exception as e:
