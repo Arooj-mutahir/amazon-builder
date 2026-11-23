@@ -1,39 +1,69 @@
 # app/services/amazon_bridge/stock_extractor.py
 
-from amazon.parsers import _is_real_atc_visible, soup
-
+import re
+from bs4 import BeautifulSoup
 
 def _extract_stock(raw_product: dict, raw_html: str = None):
-    """
-    Stock extraction — `amazon/parsers.py` ke `_is_real_atc_visible` function
-    ko hi use karta hai. Alag se koi logic nahi.
-    
-    Sirf HTML ke andar Add to Cart button check karta hai.
-    Agar button visible hai → True, 100
-    Agar button hidden / missing hai → False, 0
-    """
     print("\n🔍 [DEBUG] _extract_stock shuru hua...", flush=True)
 
     if not raw_html:
         print("❌ [DEBUG] raw_html khaali hai -> False, 0", flush=True)
         return False, 0
 
-    html_lower = raw_html.lower()
-    print(f"✅ [DEBUG] HTML length: {len(html_lower)}", flush=True)
+    print(f"✅ [DEBUG] HTML length: {len(raw_html)}", flush=True)
 
-    # ── parsers.py ka function use karo ────────────────────────────────
-    # `soup()` parsers.py mein already defined hai (BeautifulSoup wrapper)
-    try:
-        doc = soup(raw_html)
-    except Exception as e:
-        print(f"❌ [DEBUG] HTML parse fail: {e} -> False, 0", flush=True)
+    doc = BeautifulSoup(raw_html, "lxml")
+
+    # ✅ EXACT REQUIREMENT: Sirf woh input/button dhoondo jisme id="add-to-cart-button" AND name="submit.add-to-cart" ho
+    candidates = []
+    for tag in doc.find_all(["input", "button"]):
+        tag_id = (tag.get("id") or "").strip()
+        tag_name = (tag.get("name") or "").strip()
+        if tag_id == "add-to-cart-button" and tag_name == "submit.add-to-cart":
+            candidates.append(tag)
+
+    if not candidates:
+        print("❌ [DEBUG] id='add-to-cart-button' AND name='submit.add-to-cart' NOT found -> False, 0", flush=True)
         return False, 0
 
-    is_visible = _is_real_atc_visible(doc, raw_html)
+    print(f"✅ [DEBUG] {len(candidates)} candidate(s) mila with id+name", flush=True)
 
-    if is_visible:
-        print("✅ [DEBUG] ATC visible -> True, 100", flush=True)
-        return True, 100
-    else:
-        print("❌ [DEBUG] ATC hidden/missing -> False, 0", flush=True)
-        return False, 0
+    # ✅ CHECK: Woh hidden hai ya visible?
+    for tag in candidates:
+        hidden = False
+        reason = None
+
+        # 1. Tag khud pe style="display: none" check
+        style = (tag.get("style") or "").replace(" ", "").lower()
+        if "display:none" in style:
+            hidden, reason = True, "tag self display:none"
+        
+        # 2. Tag khud pe aok-hidden class check
+        elif "aok-hidden" in (tag.get("class") or []):
+            hidden, reason = True, "tag self aok-hidden"
+
+        # 3. Parent chain mein display: none check
+        if not hidden:
+            for parent in tag.parents:
+                if not hasattr(parent, "get"):
+                    break
+                pstyle = (parent.get("style") or "").replace(" ", "").lower()
+                pcls   = " ".join(parent.get("class") or []).lower()
+                
+                if "display:none" in pstyle:
+                    hidden, reason = True, "parent style display:none"
+                    break
+                if "aok-hidden" in pcls:
+                    hidden, reason = True, "parent class aok-hidden"
+                    break
+
+        # Result
+        if hidden:
+            print(f"❌ [DEBUG] Candidate hidden ({reason}) -> skip", flush=True)
+            continue
+        else:
+            print("✅ [DEBUG] Button visible (id+name match, no hidden) -> True, 100", flush=True)
+            return True, 100
+
+    print("❌ [DEBUG] All candidates hidden -> False, 0", flush=True)
+    return False, 0
