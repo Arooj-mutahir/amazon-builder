@@ -809,34 +809,38 @@ def _delivery(doc):
 
 def _is_real_atc_visible(doc, html_text: str) -> bool:
     html_lower = html_text.lower()
+    
+    # 1. Captcha / Bot page
     captcha_sigs = ["validatecaptcha", "not a robot", "api-services-support@amazon.com", "robot check"]
     if any(s in html_lower for s in captcha_sigs):
         return False
 
-    # Asli button dhoondo
+    # 2. BUTTON CHECK
     candidates = doc.find_all(id="add-to-cart-button")
     if not candidates:
         print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
         return False
 
     for tag in candidates:
-        # 1. Button pe style check
-        style = (tag.get("style") or "").replace(" ", "").lower()
+        # 🔍 DEBUG: Style print karo taake pata chale kya hai
+        raw_style = tag.get("style") or ""
+        print(f"[STOCK][DEBUG] Button mila. Uski Style: '{raw_style}'", flush=True)
+
+        style = raw_style.replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
             print("[STOCK][SKIP] Button pe display:none hai → False", flush=True)
             return False
             
         if (tag.get("type") or "").lower() == "hidden":
+            print("[STOCK][SKIP] Button type=hidden hai → False", flush=True)
             return False
 
-        # 2. SAARE PARENTS CHECK KARO
         for parent in tag.parents:
             if not hasattr(parent, "get"): break
             pstyle = (parent.get("style") or "").replace(" ", "").lower()
             pcls = " ".join(parent.get("class") or []).lower()
             pid = (parent.get("id") or "").lower()
 
-            # ✅ AGAR PARENT PE DISPLAY:NONE HAI TOH SEEDHA FALSE
             if "display:none" in pstyle or "visibility:hidden" in pstyle:
                 print("[STOCK][SKIP] Parent pe display:none hai → False", flush=True)
                 return False
