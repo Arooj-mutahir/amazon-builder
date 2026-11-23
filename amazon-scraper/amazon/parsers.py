@@ -809,8 +809,9 @@ def _delivery(doc):
 
 def _is_real_atc_visible(doc, html_text: str) -> bool:
     """
-    Sirf id="add-to-cart-button" aur name="submit.add-to-cart" wala asli button check karta hai.
-    Hidden aur nav-assist buttons ko root se ignore karta hai.
+    Sirf id="add-to-cart-button" wale button ko check karta hai.
+    Agar button ya uske parents pe display:none/visibility:hidden ho → False (Stock 0).
+    Warna visible maan kar → True (Stock 100).
     """
     html_lower = html_text.lower()
     captcha_sigs = ["validatecaptcha", "not a robot", "api-services-support@amazon.com", "robot check"]
@@ -818,22 +819,18 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         print("[STOCK][BOT] Captcha/bot page → False", flush=True)
         return False
 
-    # ✅ STRICT: Sirf wohi tags uthao jisme exactly ID aur NAME match kare
-    candidates = [
-        tag for tag in doc.find_all(["input", "button"])
-        if (tag.get("id") or "").strip() == "add-to-cart-button"
-        and (tag.get("name") or "").strip() == "submit.add-to-cart"
-    ]
+    # ✅ Sirf id='add-to-cart-button' wale tags dhoondo (name ka koi check nahi)
+    candidates = doc.find_all(id="add-to-cart-button")
 
     if not candidates:
-        print("[STOCK] No real ATC button in DOM → False", flush=True)
+        print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
         return False
 
     for tag in candidates:
-        # B-1. Button ki khud ki visibility check (Agar button pe display:none hai)
+        # B-1. Button ki khud ki visibility check
         style = (tag.get("style") or "").replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
-            print("[STOCK][SKIP] Button tag style hidden → skip", flush=True)
+            print("[STOCK][SKIP] Button style hidden → skip", flush=True)
             continue
             
         if (tag.get("type") or "").lower() == "hidden":
@@ -850,7 +847,7 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
             pcls   = " ".join(parent.get("class") or []).lower()
             pstyle = (parent.get("style") or "").replace(" ", "").lower()
 
-            # Agar parent nav-assist hai ya hidden hai -> Skip
+            # Agar koi parent hidden hai ya nav-assist hai -> Skip
             if "nav-assist" in pid or "nav-assist" in pcls:
                 skip = True; break
             if "display:none" in pstyle or "visibility:hidden" in pstyle:
@@ -860,11 +857,11 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         if skip:
             continue
 
-        # ✅ Agar sab pass ho gaya -> Button visible hai
+        # ✅ Agar button visible hai
         print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
         return True
 
-    print("[STOCK] All real candidates hidden/excluded → False", flush=True)
+    print("[STOCK] All candidates excluded → False", flush=True)
     return False
 
 

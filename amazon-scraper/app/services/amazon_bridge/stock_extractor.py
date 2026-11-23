@@ -1,4 +1,3 @@
-import re
 from bs4 import BeautifulSoup
 
 def _extract_stock(raw_product: dict, raw_html: str = None):
@@ -7,9 +6,8 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
     if not raw_html:
         return False, 0
 
-    html_lower = raw_html.lower()
-
     # ── STEP A: Captcha / Bot page ────────────────────────────────────
+    html_lower = raw_html.lower()
     captcha_sigs = ["validatecaptcha", "not a robot", "robot check", "api-services-support@amazon.com"]
     if any(s in html_lower for s in captcha_sigs):
         print("❌ [DEBUG] Captcha/bot page -> False, 0", flush=True)
@@ -21,14 +19,10 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
     except Exception:
         doc = BeautifulSoup(raw_html, "html.parser")
 
-    # ✅ STRICT CHECK: Sirf exact ID aur NAME wale button dhoondo
-    atc_tags = [
-        tag for tag in doc.find_all(["input", "button"])
-        if (tag.get("id") or "").strip() == "add-to-cart-button"
-        and (tag.get("name") or "").strip() == "submit.add-to-cart"
-    ]
+    # ✅ STRICT CHECK: Sirf id='add-to-cart-button' dhoondo (name ignore karo)
+    atc_tags = doc.find_all(id="add-to-cart-button")
     
-    print(f"🔎 [DEBUG] Exact ID+NAME wale ATC button mile: {len(atc_tags)}", flush=True)
+    print(f"🔎 [DEBUG] id='add-to-cart-button' wale tags mile: {len(atc_tags)}", flush=True)
 
     if not atc_tags:
         print("❌ [DEBUG] Asli button nahi mila -> False, 0", flush=True)
@@ -39,12 +33,12 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         style = (tag.get("style") or "").replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
             print("❌ [DEBUG] Button pe display:none/visibility:hidden hai -> False, 0", flush=True)
-            return False, 0  # 👈 Yahan seedha 0 return karega
+            return False, 0
             
         if (tag.get("type") or "").lower() == "hidden":
             return False, 0
 
-        # 2. Parents check karo
+        # 2. Parents (Wrappers) check karo
         hidden_parent = False
         for parent in tag.parents:
             if not hasattr(parent, "get"):
