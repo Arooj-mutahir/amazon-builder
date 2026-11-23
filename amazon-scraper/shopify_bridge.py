@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 import logging
+from app.worker.stock_utils import _extract_stock
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,6 @@ async def get_shopify_product_data(asin: str) -> dict:
             if data.get("variations"):
                 variations_data = data["variations"]
                 
-                # A. Dimensions (Options) nikalein
                 if variations_data.get("dimensions"):
                     for dim in variations_data["dimensions"]:
                         for val in dim.get("values", []):
@@ -42,16 +42,16 @@ async def get_shopify_product_data(asin: str) -> dict:
                                 "value": val
                             })
                 
-                # B. Har specific variation (Product) ki detail nikalein
                 if variations_data.get("products"):
                     for prod in variations_data["products"]:
                         variant_products.append({
-    "asin": prod.get("asin"),
-    "attributes": prod.get("attributes"),
-    "price": prod.get("price", {}).get("amount") if isinstance(prod.get("price"), dict) else prod.get("price"), # ✅
-    "is_current": prod.get("is_current", False)
-})
-            # 3. Categories (Tags ke liye)
+                            "asin": prod.get("asin"),
+                            "attributes": prod.get("attributes"),
+                            "price": prod.get("price", {}).get("amount") if isinstance(prod.get("price"), dict) else prod.get("price"),
+                            "is_current": prod.get("is_current", False)
+                        })
+
+            # 3. Categories
             categories = []
             if data.get("categories"):
                 categories = [cat["name"] for cat in data["categories"] if cat.get("name")]
@@ -77,10 +77,10 @@ async def get_shopify_product_data(asin: str) -> dict:
             item_weight = details.get("item_weight") or details.get("package_dimensions", "").split(";")[-1].strip()
             item_dimensions = details.get("product_dimensions") or details.get("package_dimensions", "").split(";")[0].strip()
 
-            # 7. Bullets Extract Karein (As a list)
+            # 7. Bullets Extract Karein
             bullets = data.get("bullets", [])
 
-            # 8. Bullets ko HTML format mein badlein (Description ke liye)
+            # 8. Bullets to HTML
             bullets_html = ""
             if bullets:
                 bullets_html = "<ul>\n"
@@ -93,23 +93,53 @@ async def get_shopify_product_data(asin: str) -> dict:
             rating_avg = rating.get("average", 0.0) if isinstance(rating, dict) else 0.0
             reviews_count = rating.get("count", 0) if isinstance(rating, dict) else 0
 
-            # 10. Shopify Format Return Karein
+            # ==========================================
+            # 🔥 10. STOCK CHECK (Naya Code)
+            # ==========================================
+            raw_html = None
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept-Language": "en-US,en;q=0.9",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                        "Referer": "https://www.google.com/"
+                    }
+                    amazon_url = f"https://www.amazon.com/dp/{asin}"
+                    resp = await client.get(amazon_url, headers=headers, follow_redirects=True)
+                    raw_html = resp.text
+            except Exception as e:
+                logger.error(f"HTML fetch error for stock: {e}")
+
+            # Stock check karo
+            is_available, stock_qty = _extract_stock({}, raw_html)
+            
+            if is_available:
+                final_stock = 100
+                final_available = True
+            else:
+                final_stock = 0
+                final_available = False
+
+            print(f"📦 [BRIDGE STOCK] ASIN={asin}, Available={final_available}, Stock={final_stock}", flush=True)
+
+            # 11. Shopify Format Return Karein
             return {
                 "title": data.get("title"),
-                "description": bullets_html, # HTML Format
+                "description": bullets_html,
                 "brand": brand_name,
                 "images": images_list,
                 "price": price,
                 "list_price": list_price,
-                "stock_quantity": 100,
-                "is_available": data.get("availability", {}).get("is_in_stock", True),
+                "stock_quantity": final_stock,        # 🔥 FIXED
+                "is_available": final_available,      # 🔥 FIXED
                 "asin": data.get("asin"),
                 "parent_asin": data.get("variations", {}).get("parent_asin"),
-                "variant_attributes": variant_attributes, # Options list
-                "variant_products": variant_products,     # ✅ NAYA: Har variant ki asin aur detail
+                "variant_attributes": variant_attributes,
+                "variant_products": variant_products,
                 "tags": categories,
                 "product_type": categories[-1] if categories else "General",
-                "feature_bullets": bullets, # ✅ YAHAN ALAG SE BULLETS MIL RAHE HAIN
+                "feature_bullets": bullets,
                 "specifications": details,
                 "item_weight": item_weight,
                 "item_dimensions": item_dimensions,
@@ -120,54 +150,3 @@ async def get_shopify_product_data(asin: str) -> dict:
     except Exception as e:
         logger.error(f"Bridge Error: {e}")
         raise Exception(f"Scraper Data Error: {str(e)}")
-
-
-# ============================================
-# TESTING KE LIYE
-# ============================================
-if __name__ == "__main__":
-    async def test():
-        print("Testing OmkarCloud to Shopify Bridge...")
-        
-        # Test ASIN
-        asin = "B00BGVLO1G" 
-        
-        try:
-            product_data = await get_shopify_product_data(asin)
-            print("\n✅ Data Successfully Fetched and Formatted!")
-            print("-" * 40)
-            print(f"Title: {product_data['title']}")
-            print(f"Brand: {product_data['brand']}")
-            print(f"Price: ${product_data['price']}")
-            print(f"Rating: {product_data['rating']} ({product_data['reviews_count']} reviews)")
-            print(f"Images: {len(product_data['images'])} found")
-            print(f"Tags: {product_data['tags']}")
-            print(f"Variations (Options): {len(product_data['variant_attributes'])} found")
-            print(f"Variation Products: {len(product_data['variant_products'])} found")
-            print(f"Item Weight: {product_data['item_weight']}")
-            print(f"Item Dimensions: {product_data['item_dimensions']}")
-            print("-" * 40)
-            
-            print("✅ FEATURE BULLETS (List format):")
-            if product_data['feature_bullets']:
-                for i, bullet in enumerate(product_data['feature_bullets'], 1):
-                    print(f"  {i}. {bullet[:80]}...") # Pehle 80 chars
-            else:
-                print("  No bullets found.")
-
-            print("-" * 40)
-            print("✅ VARIATION PRODUCTS (Specific ASINs):")
-            if product_data['variant_products']:
-                for vp in product_data['variant_products']:
-                    print(f"  ASIN: {vp['asin']} | Attributes: {vp['attributes']} | Current: {vp['is_current']}")
-            else:
-                print("  No variant products found.")
-                
-            print("-" * 40)
-            print("✅ DESCRIPTION (HTML Format):")
-            print(product_data['description'][:300] + "...")
-            
-        except Exception as e:
-            print(f"\n❌ Error: {e}")
-
-    asyncio.run(test())
