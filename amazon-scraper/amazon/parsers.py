@@ -813,23 +813,14 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
     if any(s in html_lower for s in captcha_sigs):
         return False
 
-    # 1. BUYBOX CHECK
-    buybox = doc.find(id="desktop_buybox") or doc.find(id="buybox")
-    if buybox:
-        b_style = (buybox.get("style") or "").replace(" ", "").lower()
-        if "display:none" in b_style:
-            print("[STOCK][SKIP] Buybox hidden hai → False", flush=True)
-            return False
-
-    # 2. BUTTON CHECK (id='add-to-cart-button')
+    # Asli button dhoondo
     candidates = doc.find_all(id="add-to-cart-button")
-
     if not candidates:
         print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
         return False
 
     for tag in candidates:
-        # ✅ BUTTON PE HIDDEN CHECK (Agar button pe display:none hai -> Seedha False)
+        # 1. Button pe style check
         style = (tag.get("style") or "").replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
             print("[STOCK][SKIP] Button pe display:none hai → False", flush=True)
@@ -838,13 +829,14 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         if (tag.get("type") or "").lower() == "hidden":
             return False
 
-        # ✅ PARENTS PE HIDDEN CHECK (Agar parent pe display:none hai -> Seedha False)
+        # 2. SAARE PARENTS CHECK KARO
         for parent in tag.parents:
             if not hasattr(parent, "get"): break
             pstyle = (parent.get("style") or "").replace(" ", "").lower()
             pcls = " ".join(parent.get("class") or []).lower()
             pid = (parent.get("id") or "").lower()
 
+            # ✅ AGAR PARENT PE DISPLAY:NONE HAI TOH SEEDHA FALSE
             if "display:none" in pstyle or "visibility:hidden" in pstyle:
                 print("[STOCK][SKIP] Parent pe display:none hai → False", flush=True)
                 return False
@@ -853,7 +845,6 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
             if "nav-assist" in pid or "nav-assist" in pcls:
                 return False
 
-        # Agar button aur uske saare parents visible hain
         print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
         return True
 

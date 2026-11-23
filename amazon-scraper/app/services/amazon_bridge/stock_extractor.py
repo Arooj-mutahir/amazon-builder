@@ -9,15 +9,6 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
     except Exception:
         doc = BeautifulSoup(raw_html, "html.parser")
 
-    # 1. BUYBOX CHECK
-    buybox = doc.find(id="desktop_buybox") or doc.find(id="buybox")
-    if buybox:
-        b_style = (buybox.get("style") or "").replace(" ", "").lower()
-        if "display:none" in b_style:
-            print("❌ [DEBUG] Buybox pe display:none hai -> False, 0", flush=True)
-            return False, 0
-
-    # 2. BUTTON CHECK
     atc_tags = doc.find_all(id="add-to-cart-button")
     print(f"🔎 [DEBUG] id='add-to-cart-button' wale tags mile: {len(atc_tags)}", flush=True)
 
@@ -26,7 +17,7 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         return False, 0
 
     for tag in atc_tags:
-        # ✅ BUTTON HIDDEN CHECK (Agar button pe hidden hai, seedha 0 return karo)
+        # 1. Button pe style check
         style = (tag.get("style") or "").replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
             print("❌ [DEBUG] Button pe display:none hai -> False, 0", flush=True)
@@ -35,13 +26,14 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
         if (tag.get("type") or "").lower() == "hidden":
             return False, 0
 
-        # ✅ PARENTS HIDDEN CHECK (Agar parent pe hidden hai, seedha 0 return karo)
+        # 2. SAARE PARENTS CHECK KARO
         for parent in tag.parents:
             if not hasattr(parent, "get"): break
             pstyle = (parent.get("style") or "").replace(" ", "").lower()
             pcls = " ".join(parent.get("class") or []).lower()
             pid = (parent.get("id") or "").lower()
 
+            # ✅ AGAR PARENT PE DISPLAY:NONE HAI TOH SEEDHA 0
             if "display:none" in pstyle or "visibility:hidden" in pstyle:
                 print("❌ [DEBUG] Parent pe display:none hai -> False, 0", flush=True)
                 return False, 0
@@ -50,7 +42,6 @@ def _extract_stock(raw_product: dict, raw_html: str = None):
             if "nav-assist" in pid or "nav-assist" in pcls:
                 return False, 0
 
-        # Agar sab visible hai
         print("✅ [DEBUG] Real visible ATC button → True, 100", flush=True)
         return True, 100
 
