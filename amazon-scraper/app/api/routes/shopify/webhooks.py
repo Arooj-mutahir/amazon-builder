@@ -47,7 +47,7 @@ async def shopify_product_delete_webhook(
         if not raw_id:
             return {"status": "ignored", "message": "No product ID"}
         shopify_product_id = str(raw_id)
-        gid_format = f"gid://shopify/Product/{shopify_product_id}"
+        # gid_format = f"gid://shopify/Product/{shopify_product_id}"  # 🔥 No need to use gid format
     except Exception as e:
         print(f"❌ Error parsing JSON: {e}", flush=True)
         return {"status": "ignored"}
@@ -59,8 +59,9 @@ async def shopify_product_delete_webhook(
         if not store:
             return {"status": "ignored", "message": "Store not found"}
 
+        # 🔥 YAHAN FIX: DB mein shopify_product_id gid://shopify/Product/... format mein hai, isliye LIKE use karo
         product_to_delete = db.query(Product).filter(
-            Product.shopify_product_id.in_([gid_format, shopify_product_id]),
+            Product.shopify_product_id.like(f"%{shopify_product_id}%"),  # 🔥 LIKE query
             Product.shopify_store_id == store.id
         ).first()
 
