@@ -21,7 +21,7 @@ from app.worker.sync_job import sync_prices_job
 router = APIRouter()
 
 FRONTEND_URL = "https://ingenious-caring-production-c9aed584.up.railway.app"
-BACKEND_URL = "https://amazon-builder-production.up.railway.app"  # ✅ Webhook ke liye
+BACKEND_URL = "https://amazon-builder-production.up.railway.app"
 
 class SyncRequest(BaseModel):
     store_id: int
@@ -88,6 +88,13 @@ async def shopify_callback(
             existing.refresh_token_expires_at = now + timedelta(seconds=int(refresh_expires_in))
         if location_id:
             existing.shopify_location_id = location_id
+        
+        # 🔥 Plan reset agar trial expire ho gaya hai
+        if existing.trial_ends_at and existing.trial_ends_at < now:
+            existing.plan = "basic"
+            existing.plan_status = "expired"
+            existing.auto_sync_enabled = False
+            
         db.commit()
         print(f"✅ Existing store updated: {shop}, location_id={location_id}", flush=True)
     else:
@@ -104,41 +111,51 @@ async def shopify_callback(
         print(f"✅ New store saved: {shop}, location_id={location_id}", flush=True)
 
     # ============================================
-    # ✅ WEBHOOK REGISTER KAREIN
+    # ✅ WEBHOOKS REGISTER KAREIN (PRODUCTS_DELETE + APP_UNINSTALLED)
     # ============================================
-    try:
-        webhook_url = f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"
-        
-        webhook_mutation = """
-        mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
-          webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
-            webhookSubscription { id }
-            userErrors { field message }
-          }
-        }
-        """
-        
-        variables = {
+    webhooks_to_register = [
+        {
             "topic": "PRODUCTS_DELETE",
-            "webhookSubscription": {
-                "callbackUrl": webhook_url,
-                "format": "JSON"
-            }
+            "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"
+        },
+        {
+            "topic": "APP_UNINSTALLED",
+            "address": f"{BACKEND_URL}/api/shopify/app/webhooks/app-uninstalled"
         }
-        
-        webhook_res = await shopify_graphql(shop, access_token, webhook_mutation, variables)
-        
-        if webhook_res and "errors" in webhook_res:
-            print(f"⚠️ Webhook registration failed: {webhook_res['errors']}", flush=True)
-        else:
-            user_errors = webhook_res.get("data", {}).get("webhookSubscriptionCreate", {}).get("userErrors", [])
-            if user_errors:
-                print(f"⚠️ Webhook registration user errors: {user_errors}", flush=True)
+    ]
+
+    webhook_mutation = """
+    mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+      webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+        webhookSubscription { id }
+        userErrors { field message }
+      }
+    }
+    """
+
+    for webhook in webhooks_to_register:
+        try:
+            variables = {
+                "topic": webhook["topic"],
+                "webhookSubscription": {
+                    "callbackUrl": webhook["address"],
+                    "format": "JSON"
+                }
+            }
+            
+            webhook_res = await shopify_graphql(shop, access_token, webhook_mutation, variables)
+            
+            if webhook_res and "errors" in webhook_res:
+                print(f"⚠️ Webhook {webhook['topic']} registration failed: {webhook_res['errors']}", flush=True)
             else:
-                print(f"✅ Webhook registered for {shop} at {webhook_url}", flush=True)
-                
-    except Exception as e:
-        print(f"⚠️ Webhook registration exception: {e}", flush=True)
+                user_errors = webhook_res.get("data", {}).get("webhookSubscriptionCreate", {}).get("userErrors", [])
+                if user_errors:
+                    print(f"⚠️ Webhook {webhook['topic']} user errors: {user_errors}", flush=True)
+                else:
+                    print(f"✅ Webhook {webhook['topic']} registered for {shop}", flush=True)
+                    
+        except Exception as e:
+            print(f"⚠️ Webhook {webhook['topic']} registration exception: {e}", flush=True)
 
     host = request.query_params.get("host", "")
     params = f"shop={shop}"
@@ -152,7 +169,7 @@ async def shopify_callback(
 
 
 # ============================================
-# 3. UPDATED ROUTE: Manual Sync Trigger
+# 3. MANUAL SYNC TRIGGER
 # ============================================
 @router.post("/trigger-sync")
 async def trigger_manual_sync(
