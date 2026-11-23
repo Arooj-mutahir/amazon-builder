@@ -808,18 +808,23 @@ def _delivery(doc):
 
 
 def _is_real_atc_visible(doc, html_text: str) -> bool:
-    """
-    Sirf id="add-to-cart-button" wale button ko check karta hai.
-    Agar button ya uske parents pe display:none/visibility:hidden ho → False (Stock 0).
-    Warna visible maan kar → True (Stock 100).
-    """
     html_lower = html_text.lower()
     captcha_sigs = ["validatecaptcha", "not a robot", "api-services-support@amazon.com", "robot check"]
     if any(s in html_lower for s in captcha_sigs):
-        print("[STOCK][BOT] Captcha/bot page → False", flush=True)
         return False
 
-    # ✅ Sirf id='add-to-cart-button' wale tags dhoondo (name ka koi check nahi)
+    # 1. BUYBOX CHECK: Agar buybox pe display:none hai ya woh unavailable hai
+    buybox = doc.find(id="desktop_buybox") or doc.find(id="buybox")
+    if buybox:
+        b_style = (buybox.get("style") or "").replace(" ", "").lower()
+        if "display:none" in b_style:
+            print("[STOCK][SKIP] Buybox hidden hai → False", flush=True)
+            return False
+        if "currently unavailable" in buybox.get_text(strip=True).lower():
+            print("[STOCK][SKIP] Buybox me 'Currently unavailable' hai → False", flush=True)
+            return False
+
+    # 2. BUTTON CHECK: Sirf id='add-to-cart-button' dhoondo
     candidates = doc.find_all(id="add-to-cart-button")
 
     if not candidates:
@@ -827,41 +832,35 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         return False
 
     for tag in candidates:
-        # B-1. Button ki khud ki visibility check
+        # Button pe display:none check
         style = (tag.get("style") or "").replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
-            print("[STOCK][SKIP] Button style hidden → skip", flush=True)
             continue
             
         if (tag.get("type") or "").lower() == "hidden":
             continue
-        if (tag.get("aria-hidden") or "").lower() == "true":
-            continue
 
-        # B-2. Parents (Wrappers) ki visibility check
+        # Parents me display:none check
         skip = False
         for parent in tag.parents:
-            if not hasattr(parent, "get"):
-                break
-            pid    = (parent.get("id")    or "").lower()
-            pcls   = " ".join(parent.get("class") or []).lower()
+            if not hasattr(parent, "get"): break
             pstyle = (parent.get("style") or "").replace(" ", "").lower()
+            pcls = " ".join(parent.get("class") or []).lower()
+            pid = (parent.get("id") or "").lower()
 
-            # Agar koi parent hidden hai ya nav-assist hai -> Skip
-            if "nav-assist" in pid or "nav-assist" in pcls:
-                skip = True; break
             if "display:none" in pstyle or "visibility:hidden" in pstyle:
                 skip = True; break
             if any(c in pcls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
                 skip = True; break
+            if "nav-assist" in pid or "nav-assist" in pcls:
+                skip = True; break
         if skip:
             continue
 
-        # ✅ Agar button visible hai
+        # Agar sab pass ho gaya
         print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
         return True
 
-    print("[STOCK] All candidates excluded → False", flush=True)
     return False
 
 
