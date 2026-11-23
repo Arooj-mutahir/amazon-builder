@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
 
     # ✅ OmkarCloud Scraper ka base URL
-    OMKARCLOUD_URL: str = "http://localhost:8001"
+    # OMKARCLOUD_URL: str = "http://localhost:8001"
 
     class Config:
         env_file = ".env"
