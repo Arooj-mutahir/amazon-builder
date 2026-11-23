@@ -812,12 +812,10 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
     Returns True ONLY when Amazon is directly selling the product with a
     visible 'Add to Cart' button.
 
-    Two-step logic:
-    STEP A — Page-level hard signals (fast text check, no DOM needed):
-        • Captcha/bot page       → False
+    STEP A — Page-level hard signals:
+        • Captcha/bot page        → False
         • "Currently unavailable" → False
-        • "See all buying options" / "Other sellers" anywhere on page → False
-          (Amazon is NOT the direct seller; ATC button in DOM is a ghost form)
+        • "See all buying options" in the VISIBLE buybox → False
 
     STEP B — DOM check: id="add-to-cart-button" must exist, be visible,
         and NOT be inside a nav-assist / hidden container.
@@ -830,7 +828,7 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         "api-services-support@amazon.com", "robot check",
     ]
     if any(s in html_lower for s in captcha_sigs):
-        print("[STOCK][BOT] Captcha/bot page → False", flush=True)
+        print("[STOCK][BOT] Captcha/bot page → False, 0", flush=True)
         return False
 
     # ── STEP A-2: Explicit out-of-stock text ────────────────────────────
@@ -840,32 +838,30 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         "not available for purchase",
     ]
     if any(s in html_lower for s in oos_sigs):
-        print("[STOCK][OOS] Explicit OOS text → False", flush=True)
+        print("[STOCK][OOS] Explicit OOS text → False, 0", flush=True)
         return False
 
     # ── STEP A-3: "See All Buying Options" = Amazon NOT direct seller ───
-    # Amazon still renders id="add-to-cart-button" in DOM even on these pages
-    # (inside a hidden ghost form). We must reject the page BEFORE DOM check.
-    # This is the fix for the false-positive on B07RPR83DV type pages.
+    # 🔥 FIX: Sirf visible buybox check karo — poora html_lower NAHI.
+    # Amazon hidden ghost forms / recommendation widgets mein bhi yeh text
+    # hota hai, jo false positive deta hai. #centerCol fallback bhi hatao
+    # kyunki woh bahut bada container hai (title, bullets, description sab).
     buying_opts_sigs = [
         "see all buying options",
         "available at a lower price from other sellers",
         "other sellers on amazon",
     ]
-    # Check ONLY inside the visible buybox area (not buried in JS/scripts)
-    # We use the #desktop_buybox / #buybox / #apex_desktop text, not full html
     buybox_el = (
         doc.find(id="desktop_buybox")
         or doc.find(id="buybox")
         or doc.find(id="apex_desktop")
-        or doc.find(id="centerCol")  # fallback container
+        or doc.find(id="buybox_feature_div")  # ✅ centerCol → buybox_feature_div
     )
     buybox_text = (buybox_el.get_text(" ", strip=True).lower() if buybox_el else "")
 
-    # Also check the full html_lower for these signals — they are unique enough
-    if any(s in buybox_text for s in buying_opts_sigs) or \
-       any(s in html_lower for s in buying_opts_sigs):
-        print("[STOCK][BUYING-OPTS] 'See All Buying Options'/'Other Sellers' found → False", flush=True)
+    # ✅ FIX: sirf buybox_text check — html_lower check HATAO (false positive khatam)
+    if any(s in buybox_text for s in buying_opts_sigs):
+        print("[STOCK][BUYING-OPTS] 'See All Buying Options'/'Other Sellers' in buybox → False, 0", flush=True)
         return False
 
     # ── STEP B: DOM check for real visible ATC button ───────────────────
@@ -879,7 +875,7 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         )
 
     if not candidates:
-        print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
+        print("[STOCK] No id='add-to-cart-button' in DOM → False, 0", flush=True)
         return False
 
     for tag in candidates:
@@ -927,12 +923,11 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
             continue
 
         # ✅ All checks passed — real visible Add to Cart button
-        print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
+        print("[STOCK][MATCH] Real visible ATC button found → True, 100", flush=True)
         return True
 
-    print("[STOCK] All candidates excluded → False", flush=True)
+    print("[STOCK] All candidates excluded → False, 0", flush=True)
     return False
-
 
 def _buybox(doc, site):
     seller_link = first(doc, "#sellerProfileTriggerId")
