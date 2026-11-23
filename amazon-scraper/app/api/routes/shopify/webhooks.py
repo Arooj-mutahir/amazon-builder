@@ -74,19 +74,30 @@ async def shopify_product_delete_webhook(
 
         if product_to_delete:
             deleted_count = 0
+            
+            # Agar yeh main parent product hai, toh pehle uske saare variations delete karo
             if not product_to_delete.is_variation:
-                child_deleted = db.query(Product).filter(
+                print(f"   🔍 Parent product mila (ASIN: {product_to_delete.asin}). Ab variations delete kar rahe hain...", flush=True)
+                
+                # Variations ko fetch karo (Bina store_id ke, taaki koi miss na ho)
+                variations = db.query(Product).filter(
                     Product.parent_asin == product_to_delete.asin,
-                    Product.shopify_store_id == store.id,
                     Product.is_variation == True
-                ).delete(synchronize_session=False)
-                deleted_count += child_deleted
-                print(f"   🗑️ Deleted {child_deleted} child variants", flush=True)
+                ).all()
+                
+                for var in variations:
+                    print(f"      🗑️ Deleting variation: {var.asin} (ID: {var.id})", flush=True)
+                    db.delete(var)
+                    deleted_count += 1
+                    
+                print(f"   🗑️ Total {deleted_count} child variants delete hue", flush=True)
 
+            # Ab main product ko delete karo
             db.delete(product_to_delete)
             deleted_count += 1
             db.commit()
-            print(f"✅ Database se {deleted_count} products delete ho gaye: {shopify_product_id}", flush=True)
+            
+            print(f"✅ Database se total {deleted_count} products delete ho gaye (Parent + Variations): {shopify_product_id}", flush=True)
         else:
             print(f"⚠️ Product DB mein nahi mila: {shopify_product_id}", flush=True)
 
