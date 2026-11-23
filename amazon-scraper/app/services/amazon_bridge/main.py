@@ -9,13 +9,12 @@ logger = logging.getLogger(__name__)
 async def get_shopify_product_data(asin: str, default_stock_qty: int = 0) -> dict:
     try:
         # 🔥 Direct scraper call (Bina HTTP request ke)
-        # Scraper synchronous hai, isliye asyncio.to_thread use kar rahe hain
         data = await asyncio.to_thread(amazon_details, asin)
 
         if not data or "asin" not in data:
             raise Exception(f"Custom Scraper se sahi data nahi mila: {asin}")
 
-        # 1. Images (Custom scraper se direct)
+        # 1. Images
         images_list = []
         if data.get("images"):
             for img in data["images"]:
@@ -47,13 +46,22 @@ async def get_shopify_product_data(asin: str, default_stock_qty: int = 0) -> dic
         categories = [cat.get("name") for cat in data.get("categories", []) if cat.get("name")]
         brand_name = data.get("brand", {}).get("name", "") if isinstance(data.get("brand"), dict) else str(data.get("brand", ""))
 
-        # 4. Price
+        # 4. Price (🔥 FIXED)
         price = 0.0
         list_price = None
         if data.get("price"):
-            price = float(data["price"].get("amount", 0))
-            if data["price"].get("list_price"):
-                list_price = float(data["price"]["list_price"].get("amount", 0))
+            price_data = data["price"]
+            if isinstance(price_data, dict):
+                price = float(price_data.get("amount", 0) or 0)
+                
+                list_price_val = price_data.get("list_price")
+                if list_price_val is not None:
+                    if isinstance(list_price_val, dict):
+                        list_price = float(list_price_val.get("amount", 0) or 0)
+                    else:
+                        list_price = float(list_price_val)
+            else:
+                price = float(price_data or 0)
 
         # 5. Rating & Bullets
         rating = data.get("rating", {})
