@@ -813,18 +813,15 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
     if any(s in html_lower for s in captcha_sigs):
         return False
 
-    # 1. BUYBOX CHECK: Agar buybox pe display:none hai ya woh unavailable hai
+    # 1. BUYBOX CHECK
     buybox = doc.find(id="desktop_buybox") or doc.find(id="buybox")
     if buybox:
         b_style = (buybox.get("style") or "").replace(" ", "").lower()
         if "display:none" in b_style:
             print("[STOCK][SKIP] Buybox hidden hai → False", flush=True)
             return False
-        if "currently unavailable" in buybox.get_text(strip=True).lower():
-            print("[STOCK][SKIP] Buybox me 'Currently unavailable' hai → False", flush=True)
-            return False
 
-    # 2. BUTTON CHECK: Sirf id='add-to-cart-button' dhoondo
+    # 2. BUTTON CHECK (id='add-to-cart-button')
     candidates = doc.find_all(id="add-to-cart-button")
 
     if not candidates:
@@ -832,16 +829,16 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
         return False
 
     for tag in candidates:
-        # Button pe display:none check
+        # ✅ BUTTON PE HIDDEN CHECK (Agar button pe display:none hai -> Seedha False)
         style = (tag.get("style") or "").replace(" ", "").lower()
         if "display:none" in style or "visibility:hidden" in style:
-            continue
+            print("[STOCK][SKIP] Button pe display:none hai → False", flush=True)
+            return False
             
         if (tag.get("type") or "").lower() == "hidden":
-            continue
+            return False
 
-        # Parents me display:none check
-        skip = False
+        # ✅ PARENTS PE HIDDEN CHECK (Agar parent pe display:none hai -> Seedha False)
         for parent in tag.parents:
             if not hasattr(parent, "get"): break
             pstyle = (parent.get("style") or "").replace(" ", "").lower()
@@ -849,15 +846,14 @@ def _is_real_atc_visible(doc, html_text: str) -> bool:
             pid = (parent.get("id") or "").lower()
 
             if "display:none" in pstyle or "visibility:hidden" in pstyle:
-                skip = True; break
+                print("[STOCK][SKIP] Parent pe display:none hai → False", flush=True)
+                return False
             if any(c in pcls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
-                skip = True; break
+                return False
             if "nav-assist" in pid or "nav-assist" in pcls:
-                skip = True; break
-        if skip:
-            continue
+                return False
 
-        # Agar sab pass ho gaya
+        # Agar button aur uske saare parents visible hain
         print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
         return True
 
