@@ -13,9 +13,6 @@ router = APIRouter()
 
 SHOPIFY_WEBHOOK_SECRET = os.getenv("SHOPIFY_WEBHOOK_SECRET", "")
 
-# ============================================================
-# 🗑️ PRODUCT DELETE WEBHOOK
-# ============================================================
 @router.post("/app/webhooks/products-delete")
 async def shopify_product_delete_webhook(
     request: Request,
@@ -25,7 +22,6 @@ async def shopify_product_delete_webhook(
 ):
     body = await request.body()
 
-    # 🔥 HMAC verification temporarily disabled for testing
     print(f"⚠️ [TESTING] HMAC verification disabled for {x_shopify_shop_domain}", flush=True)
 
     try:
@@ -46,16 +42,19 @@ async def shopify_product_delete_webhook(
         if not store:
             return {"status": "ignored", "message": "Store not found"}
 
-        # 🔥 STEP 1: Product dhoondo
+        # 🔥 FIX: Store ID ka check hata diya hai, sirf Product ID se dhoondh rahe hain
         product_to_delete = db.query(Product).filter(
-            Product.shopify_product_id == gid_format,
-            Product.shopify_store_id == store.id
+            Product.shopify_product_id == gid_format
         ).first()
 
         if not product_to_delete:
             product_to_delete = db.query(Product).filter(
-                Product.shopify_product_id.like(f"%{shopify_product_id}%"),
-                Product.shopify_store_id == store.id
+                Product.shopify_product_id == shopify_product_id
+            ).first()
+
+        if not product_to_delete:
+            product_to_delete = db.query(Product).filter(
+                Product.shopify_product_id.like(f"%{shopify_product_id}%")
             ).first()
 
         if product_to_delete:
@@ -65,36 +64,19 @@ async def shopify_product_delete_webhook(
             if not product_to_delete.is_variation:
                 print(f"   🔍 Parent product mila (ASIN: {product_to_delete.asin}). Ab variations delete kar rahe hain...", flush=True)
                 
-                # ✅ FIX: Pehle parent_asin se try karo
                 variations = db.query(Product).filter(
                     Product.parent_asin == product_to_delete.asin,
                     Product.is_variation == True
                 ).all()
                 
-                # ✅ DOUBLE CHECK: Agar parent_asin se nahi mile, toh parent_id se dhoondo
-                # (Assuming tumhare database mein 'parent_id' column hai jo parent ki primary key store karta hai)
-                if not variations and hasattr(product_to_delete, 'id'):
-                    print(f"   ⚠️ parent_asin se variations nahi mile. Ab parent_id se try kar rahe hain...", flush=True)
-                    variations = db.query(Product).filter(
-                        Product.parent_id == product_to_delete.id,
-                        Product.is_variation == True
-                    ).all()
-                
-                # ✅ AGAR PHIR BHI NAHI MILE, TOH SIRF is_variation = True wale saare check karo (e.g. asin matching)
-                if not variations:
-                    print(f"   ⚠️ parent_id se bhi variations nahi mile. Ab asin list se match kar rahe hain...", flush=True)
-                    # Optional: Agar tumhare paas variation_asins list hai toh unko match karo
-
                 print(f"   🔎 DEBUG: Total {len(variations)} child variations mile.", flush=True)
 
                 for var in variations:
                     print(f"      🗑️ Deleting variation: {var.asin} (ID: {var.id})", flush=True)
                     db.delete(var)
                     deleted_count += 1
-                    
-                print(f"   🗑️ Total {deleted_count} child variants delete hue", flush=True)
 
-            # Parent ko delete karo
+            # Ab main product ko delete karo
             db.delete(product_to_delete)
             deleted_count += 1
             db.commit()
