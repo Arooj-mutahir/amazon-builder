@@ -1,8 +1,8 @@
 # app/services/amazon_bridge/main.py
 import asyncio
 import logging
-from app.services.amazon_bridge.stock_extractor import extract_stock_from_html
-from amazon.products import details as amazon_details  # 🔥 Direct import
+from app.services.amazon_bridge.stock_extractor import extract_stock_from_data
+from amazon.products import details as amazon_details  
 
 logger = logging.getLogger(__name__)
 
@@ -82,19 +82,14 @@ async def get_shopify_product_data(asin: str, default_stock_qty: int = 0) -> dic
         item_dimensions = details.get("product_dimensions") or details.get("package_dimensions", "").split(";")[0].strip()
 
         # ==========================================
-        # 🔥 7. STOCK CHECK (Custom Scraper ke HTML se)
+        # 🔥 7. STOCK CHECK — parsers.py ka parsed data use karo (no re-parsing)
+        # parsers.py ki product_page() already is_add_to_cart_visible,
+        # availability, aur buybox compute kar chuka hai.
         # ==========================================
-        raw_html = data.get("raw_html", "")
-        
-        if not raw_html:
-            print(f"⚠️ [STOCK] Custom Scraper ne HTML nahi bheja, direct fields check kar rahe hain...", flush=True)
-            is_available = data.get("is_add_to_cart_visible", False)
-            stock_qty = data.get("stock_quantity", 0)
-        else:
-            is_available, stock_qty = extract_stock_from_html(raw_html)
+        is_available, stock_qty = extract_stock_from_data(data)
 
         if is_available:
-            final_stock = 100
+            final_stock = stock_qty if stock_qty and stock_qty > 0 else 100
             final_available = True
         else:
             final_stock = 0
