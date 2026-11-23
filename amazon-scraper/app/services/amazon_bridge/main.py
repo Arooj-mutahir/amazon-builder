@@ -6,7 +6,7 @@ from app.services.amazon_bridge.stock_extractor import extract_stock_from_html
 
 logger = logging.getLogger(__name__)
 
-async def get_shopify_product_data(asin: str) -> dict:
+async def get_shopify_product_data(asin: str, default_stock_qty: int = 0) -> dict:  # 🔥 default_stock_qty add kiya
     url = f"http://localhost:8000/products/details?product={asin}"
     
     try:
