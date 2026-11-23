@@ -42,7 +42,7 @@ async def shopify_product_delete_webhook(
         if not store:
             return {"status": "ignored", "message": "Store not found"}
 
-        # 🔥 FIX: Store ID ka check hata diya hai, sirf Product ID se dhoondh rahe hain
+        # Product dhoondo (Store ID ka check hata diya)
         product_to_delete = db.query(Product).filter(
             Product.shopify_product_id == gid_format
         ).first()
@@ -60,21 +60,20 @@ async def shopify_product_delete_webhook(
         if product_to_delete:
             deleted_count = 0
             
-            # Agar yeh Parent product hai, toh pehle child variations delete karo
-            if not product_to_delete.is_variation:
-                print(f"   🔍 Parent product mila (ASIN: {product_to_delete.asin}). Ab variations delete kar rahe hain...", flush=True)
-                
-                variations = db.query(Product).filter(
-                    Product.parent_asin == product_to_delete.asin,
-                    Product.is_variation == True
-                ).all()
-                
-                print(f"   🔎 DEBUG: Total {len(variations)} child variations mile.", flush=True)
+            # ✅ FIX: Chahe product parent ho ya variation, uske child variations check karo
+            print(f"   🔍 Product mila (ASIN: {product_to_delete.asin}, is_variation: {product_to_delete.is_variation}). Ab variations delete kar rahe hain...", flush=True)
+            
+            variations = db.query(Product).filter(
+                Product.parent_asin == product_to_delete.asin,
+                Product.is_variation == True
+            ).all()
+            
+            print(f"   🔎 DEBUG: Total {len(variations)} child variations mile.", flush=True)
 
-                for var in variations:
-                    print(f"      🗑️ Deleting variation: {var.asin} (ID: {var.id})", flush=True)
-                    db.delete(var)
-                    deleted_count += 1
+            for var in variations:
+                print(f"      🗑️ Deleting variation: {var.asin} (ID: {var.id})", flush=True)
+                db.delete(var)
+                deleted_count += 1
 
             # Ab main product ko delete karo
             db.delete(product_to_delete)
