@@ -807,6 +807,139 @@ def _delivery(doc):
     return {"text": primary, "fastest_text": secondary, "options": unique, "location": location}
 
 
+def _is_real_atc_visible(doc, html_text: str) -> bool:
+    """
+    BS4 DOM traversal: returns True ONLY when a genuine, visible
+    'Add to Cart' button exists that is NOT:
+      - inside the nav-assist accessibility shortcuts container
+      - hidden via style/aria-hidden/type=hidden/aok-hidden class
+      - inside <noscript> (already removed before this call)
+      - inside a parent with display:none
+
+    Also does fast text-signal checks before touching the DOM.
+    """
+    html_lower = html_text.lower()
+
+    # ── Fast text signals that always mean NOT buyable ──────────────────
+    captcha_sigs = [
+        "validatecaptcha", "not a robot",
+        "api-services-support@amazon.com", "robot check",
+    ]
+    if any(s in html_lower for s in captcha_sigs):
+        print("[STOCK][BOT] Captcha/bot page → False", flush=True)
+        return False
+
+    oos_sigs = [
+        "currently unavailable",
+        "we don't know when or if this item will be back in stock",
+        "not available for purchase",
+        # "out of stock" is too greedy — appears in review text etc.
+    ]
+    if any(s in html_lower for s in oos_sigs):
+        print(f"[STOCK][OOS] Explicit OOS text found → False", flush=True)
+        return False
+
+    # ── DOM: find candidates by exact id ───────────────────────────────
+    # Amazon uses id="add-to-cart-button" (input or button tag)
+    candidates = doc.find_all(
+        ["input", "button"],
+        id=re.compile(r"^add-to-cart-button$", re.IGNORECASE),
+    )
+
+    if not candidates:
+        # Also check button tag variant used on some layouts
+        candidates = doc.find_all(
+            id=re.compile(r"^submit\.add-to-cart$", re.IGNORECASE)
+        )
+
+    if not candidates:
+        print("[STOCK][SIGNAL] No id='add-to-cart-button' in DOM → False", flush=True)
+        return False
+
+    for tag in candidates:
+        # 1. nav-assist check on the tag's id itself
+        tag_id = (tag.get("id") or "").lower()
+        if "nav-assist" in tag_id:
+            print("[STOCK][SKIP] nav-assist id on tag → skip", flush=True)
+            continue
+
+        # 2. Walk up parents to check for nav-assist container or hidden ancestor
+        skip = False
+        for parent in tag.parents:
+            if not hasattr(parent, "get"):
+                break
+            pid   = (parent.get("id")    or "").lower()
+            pcls  = " ".join(parent.get("class") or []).lower()
+            pstyle = (parent.get("style") or "").replace(" ", "").lower()
+
+            if "nav-assist" in pid or "nav-assist" in pcls:
+                print("[STOCK][SKIP] Inside nav-assist container → skip", flush=True)
+                skip = True
+                break
+            if "display:none" in pstyle or "visibility:hidden" in pstyle:
+                print("[STOCK][SKIP] Ancestor display:none/visibility:hidden → skip", flush=True)
+                skip = True
+                break
+            if any(c in pcls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
+                print("[STOCK][SKIP] Ancestor aok-hidden class → skip", flush=True)
+                skip = True
+                break
+        if skip:
+            continue
+
+        # 3. Hidden checks on the tag itself
+        style = (tag.get("style") or "").replace(" ", "").lower()
+        if "display:none" in style or "visibility:hidden" in style or "opacity:0" in style:
+            print("[STOCK][SKIP] Tag style hidden → skip", flush=True)
+            continue
+
+        if (tag.get("aria-hidden") or "").lower() == "true":
+            print("[STOCK][SKIP] Tag aria-hidden=true → skip", flush=True)
+            continue
+
+        if (tag.get("type") or "").lower() == "hidden":
+            print("[STOCK][SKIP] Tag type=hidden → skip", flush=True)
+            continue
+
+        tag_cls = " ".join(tag.get("class") or []).lower()
+        if any(c in tag_cls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
+            print("[STOCK][SKIP] Tag aok-hidden class → skip", flush=True)
+            continue
+
+        # 4. "See all buying options" text in the PAGE means Amazon is NOT
+        #    the direct seller. Even if ATC button HTML exists, it may belong
+        #    to a 3rd-party inline widget. Trust the page-level signal over DOM.
+        buying_opts = [
+            "see all buying options",
+            "available at a lower price from other sellers",
+            "other sellers on amazon",
+        ]
+        if any(s in html_lower for s in buying_opts):
+            # Confirm the ATC button is inside the main buybox (#addToCart,
+            # #add-to-cart-form, #buybox) — not a rogue widget elsewhere.
+            in_buybox = False
+            for parent in tag.parents:
+                if not hasattr(parent, "get"):
+                    break
+                pid = (parent.get("id") or "").lower()
+                if pid in ("addtocart", "add-to-cart-form", "buybox",
+                           "apex_desktop", "desktop_buybox"):
+                    in_buybox = True
+                    break
+            if not in_buybox:
+                print("[STOCK][SKIP] buying-options page + ATC not in main buybox → skip", flush=True)
+                continue
+            # If it IS in the buybox on a buying-options page, it's a
+            # genuinely buyable variant — keep it.
+
+        # ✅ Passed all checks
+        print(f"[STOCK][MATCH] Real visible ATC → True", flush=True)
+        return True
+
+    print("[STOCK] All candidates excluded → False", flush=True)
+    return False
+
+
 def _buybox(doc, site):
     seller_link = first(doc, "#sellerProfileTriggerId")
     merchant = first_text(doc, "#merchantInfoFeature_feature_div, #merchant-info") or ""
@@ -1021,29 +1154,10 @@ def product_page(html_text, site):
     videos = _videos(html_text)
 
     # ==========================================
-    # 🔥 ADD TO CART VISIBLE CHECK (NAYA)
+    # 🔥 ADD TO CART VISIBLE CHECK — BS4 DOM traversal (doc already parsed)
+    # Sirf real, visible, non-hidden, non-nav-assist ATC button count karo.
     # ==========================================
-    html_lower = html_text.lower()
-    is_add_to_cart_visible = False
-    
-    if "captcha" not in html_lower and "not a robot" not in html_lower:
-        if "currently unavailable" not in html_lower and "out of stock" not in html_lower:
-            button_pattern = r'<input[^>]*id=["\']add-to-cart-button["\'][^>]*>'
-            matches = list(re.finditer(button_pattern, html_text, re.IGNORECASE))
-            
-            for match in matches:
-                start_idx = max(0, match.start() - 1000)
-                context = html_lower[start_idx:match.start()]
-                button_tag = match.group(0).lower()
-                
-                if 'nav-assist' in context or 'display: none' in context or 'aok-hidden' in context:
-                    continue
-                if 'display: none' in button_tag or 'visibility: hidden' in button_tag or 'aria-hidden="true"' in button_tag:
-                    continue
-                
-                is_add_to_cart_visible = True
-                break
-
+    is_add_to_cart_visible = _is_real_atc_visible(doc, html_text)
     stock_quantity = 100 if is_add_to_cart_visible else 0
 
     return {
