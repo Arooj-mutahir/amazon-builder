@@ -47,7 +47,7 @@ async def shopify_product_delete_webhook(
         if not raw_id:
             return {"status": "ignored", "message": "No product ID"}
         shopify_product_id = str(raw_id)
-        # gid_format = f"gid://shopify/Product/{shopify_product_id}"  # 🔥 No need to use gid format
+        gid_format = f"gid://shopify/Product/{shopify_product_id}"
     except Exception as e:
         print(f"❌ Error parsing JSON: {e}", flush=True)
         return {"status": "ignored"}
@@ -59,11 +59,18 @@ async def shopify_product_delete_webhook(
         if not store:
             return {"status": "ignored", "message": "Store not found"}
 
-        # 🔥 YAHAN FIX: DB mein shopify_product_id gid://shopify/Product/... format mein hai, isliye LIKE use karo
+        # 🔥 STEP 1: Exact gid format match karo
         product_to_delete = db.query(Product).filter(
-            Product.shopify_product_id.like(f"%{shopify_product_id}%"),  # 🔥 LIKE query
+            Product.shopify_product_id == gid_format,
             Product.shopify_store_id == store.id
         ).first()
+
+        # 🔥 STEP 2: Agar gid_format se nahi mila, toh LIKE query try karo (fallback)
+        if not product_to_delete:
+            product_to_delete = db.query(Product).filter(
+                Product.shopify_product_id.like(f"%{shopify_product_id}%"),
+                Product.shopify_store_id == store.id
+            ).first()
 
         if product_to_delete:
             deleted_count = 0
@@ -88,72 +95,4 @@ async def shopify_product_delete_webhook(
     except Exception as e:
         db.rollback()
         print(f"❌ Error deleting product from DB: {e}", flush=True)
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
-
-# ============================================================
-# 🛑 APP UNINSTALLED WEBHOOK
-# ============================================================
-@router.post("/app/webhooks/app-uninstalled")
-async def shopify_app_uninstalled_webhook(
-    request: Request,
-    x_shopify_hmac_sha256: str = Header(None),
-    x_shopify_shop_domain: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    body = await request.body()
-
-    # 🔥 TEMPORARILY DISABLED HMAC VERIFICATION FOR TESTING
-    print(f"⚠️ [TESTING] HMAC verification disabled for {x_shopify_shop_domain}", flush=True)
-    
-    # Original HMAC code (uncomment for production)
-    # if x_shopify_hmac_sha256 and SHOPIFY_WEBHOOK_SECRET:
-    #     digest = base64.b64encode(
-    #         hmac.new(
-    #             SHOPIFY_WEBHOOK_SECRET.encode('utf-8'),
-    #             body,
-    #             hashlib.sha256
-    #         ).digest()
-    #     ).decode('utf-8')
-    #     if not hmac.compare_digest(digest, x_shopify_hmac_sha256):
-    #         print(f"❌ Invalid Uninstall HMAC from {x_shopify_shop_domain}", flush=True)
-    #         raise HTTPException(status_code=401, detail="Invalid HMAC")
-
-    try:
-        payload = json.loads(body)
-        shop_domain = payload.get("domain") or payload.get("myshopify_domain") or x_shopify_shop_domain
-    except Exception as e:
-        print(f"❌ Error parsing Uninstall JSON: {e}", flush=True)
-        return {"status": "ignored"}
-
-    print(f"🛑 Shopify Webhook: App Uninstalled (Shop: {shop_domain})", flush=True)
-
-    try:
-        store = db.query(ShopifyStore).filter(ShopifyStore.shop_domain == shop_domain).first()
-        
-        if store:
-            store.access_token = None
-            store.refresh_token = None
-            store.expires_at = None
-            store.refresh_token_expires_at = None
-            
-            store.plan = "basic"
-            store.plan_status = "active"
-            store.plan_expires_at = None
-            store.auto_sync_enabled = False
-            
-            store.default_extra_percent = 0.0
-            store.default_tax_rate = 0.0
-            store.default_compare_price_markup = 0.0
-
-            db.commit()
-            print(f"✅ Store '{shop_domain}' uninstalled. Plan reset to BASIC.", flush=True)
-        else:
-            print(f"⚠️ Store DB mein nahi mila: {shop_domain}", flush=True)
-
-        return {"status": "success"}
-
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Error handling app uninstall: {e}", flush=True)
         raise HTTPException(status_code=500, detail="Internal Server Error")
