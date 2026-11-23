@@ -1,7 +1,6 @@
 # app/worker/variants_product.py
 import re
 import traceback
-import asyncio
 from app.models import Product, ShopifyStore
 from app.services.shopify import create_shopify_product_with_variants, publish_product, add_product_to_collections, set_product_metafields_smart
 from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
@@ -47,7 +46,7 @@ async def process_multi_variant(
     shopify_payload["handle"] = final_handle
 
     # ==========================================
-    # 🔥 3. DB SAVE (PEHLE SAVE KARO, SHOPIFY SE PEHLE)
+    # 🔥 3. DB SAVE
     # ==========================================
     db_save = SessionLocal()
     parent_asin_upper = main_data["asin"].upper()
@@ -57,18 +56,9 @@ async def process_multi_variant(
         # --- Parent Product Save ---
         new_product = db_save.query(Product).filter(Product.asin == parent_asin_upper).first()
         
-        # 🔥 NAYA LOGIC: Add to Cart button check
-        is_add_to_cart_visible = main_data.get("is_add_to_cart_visible", False)
-
-        if is_add_to_cart_visible:
-            parent_available = True
-            parent_stock_qty = 100
-        else:
-            parent_available = False
-            parent_stock_qty = 0
-
-        parent_in_stock = parent_available
-        parent_stock = parent_stock_qty
+        # 🔥 YEH HAI ASLI FIX: Seedha main_data se uthao
+        parent_in_stock = bool(main_data.get("is_available", False))
+        parent_stock = int(main_data.get("stock_qty", 0)) if parent_in_stock else 0
         availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
         if not new_product:
@@ -125,13 +115,9 @@ async def process_multi_variant(
                 v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
                 v_images = v.get("images") or []
 
-                # 🔥 NAYA LOGIC (Child variants ke liye): Parent ka hi flag use karenge
-                if is_add_to_cart_visible:
-                    v_resolved = 100
-                    v_in_stock = True
-                else:
-                    v_resolved = 0
-                    v_in_stock = False
+                # 🔥 FIX: Child ke liye bhi main_data use karo
+                v_in_stock = bool(v.get("in_stock", parent_in_stock))
+                v_resolved = int(v.get("stock_qty", parent_stock)) if v_in_stock else 0
 
                 v_avail = "In Stock" if v_in_stock else "Out of Stock"
                 v_title = f"{main_data.get('title', '')} - {v.get('title', '')}" if v.get('title') else main_data.get("title", "")
@@ -177,16 +163,15 @@ async def process_multi_variant(
         db_save.rollback()
         print(f"❌ [DB ERROR] Save Failed: {e}", flush=True)
         traceback.print_exc()
-        return # DB fail hui toh aage mat badho
+        return
     finally:
         db_save.close()
 
     # ==========================================
-    # 🔥 4. SHOPIFY API CALL (Ab DB save ho chuka hai)
+    # 🔥 4. SHOPIFY API CALL
     # ==========================================
     print(f"🚀 [Shopify] Creating product with {len(clean_variants)} variants...", flush=True)
     
-    # Fresh DB session for token (taaki koi connection idle na rahe)
     token_db = SessionLocal()
     try:
         store_token = token_db.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
@@ -222,7 +207,6 @@ async def process_multi_variant(
                 parent_db.shopify_product_id = shopify_id
                 parent_db.shopify_status = "active"
             
-            # Update child variants
             for v in clean_variants:
                 v_asin = v.get("asin", "").upper()
                 if v_asin and v_asin != parent_asin_upper:
@@ -239,9 +223,7 @@ async def process_multi_variant(
         finally:
             update_db.close()
 
-        # ==========================================
-        # 🔥 6. PUBLISH & COLLECTIONS (Sirf agar Shopify ID mili)
-        # ==========================================
+        # Publish & Collections
         try:
             await publish_product(shop_domain, token, shopify_id)
             print(f"✅ Product Published", flush=True)

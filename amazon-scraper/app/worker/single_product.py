@@ -18,18 +18,9 @@ async def process_single_variant(
     parent_asin_upper = main_data["asin"].upper()
     existing = db.query(Product).filter(Product.asin == parent_asin_upper).first()
     
-    # 🔥 NAYA LOGIC: Add to Cart button check
-    is_add_to_cart_visible = main_data.get("is_add_to_cart_visible", False)
-
-    if is_add_to_cart_visible:
-        parent_available = True
-        parent_stock_qty = 100
-    else:
-        parent_available = False
-        parent_stock_qty = 0
-
-    parent_in_stock = parent_available
-    parent_stock = parent_stock_qty
+    # 🔥 YEH HAI ASLI FIX: Seedha main_data se uthao
+    parent_in_stock = bool(main_data.get("is_available", False))
+    parent_stock = int(main_data.get("stock_qty", 0)) if parent_in_stock else 0
     availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
     # ==========================================
@@ -52,7 +43,6 @@ async def process_single_variant(
     selected_words = (meaningful_words or [w.lower() for w in all_words])[:5]
     base_handle = "-".join(selected_words) if selected_words else "product"
 
-    # Duplicate Handle Check
     existing_products = db.query(Product).filter(Product.shopify_handle.like(f"{base_handle}%")).all()
     if existing_products:
         suffix = len(existing_products) + 1
@@ -70,7 +60,7 @@ async def process_single_variant(
         if existing:
             new_product = existing
             new_product.shopify_store_id = store.id
-            new_product.shopify_status = "active"
+            new_product.shopify_status = "pending"
             new_product.price = shopify_payload["price"]
             new_product.amazon_price = main_data.get("price")
             new_product.title = main_data.get("title")
@@ -101,7 +91,7 @@ async def process_single_variant(
                 amazon_price=main_data.get("price"), price=shopify_payload["price"], 
                 markup=user_markup, markup_type=user_markup_type, extra_percent=user_extra, tax_rate=user_tax,
                 variant_attributes=main_data.get("variant_attributes") or [], categories=extracted_categories,
-                tags=final_tags, shopify_store_id=store.id, shopify_status="pending", # pending rakho kyunki abhi shopify pe nahi bana
+                tags=final_tags, shopify_store_id=store.id, shopify_status="pending",
                 shopify_handle=final_handle, 
             )
             db.add(new_product)
@@ -122,7 +112,6 @@ async def process_single_variant(
     print(f"🏪 Creating product on store: {shop_domain}", flush=True)
     print(f"🔄 Refreshing token before product creation...", flush=True)
     
-    # Token fetch karo, phir db close kar do
     try:
         fresh_token = await _get_valid_access_token(store, db, force_refresh=True)
         print(f"🔑 Fresh token obtained.", flush=True)
@@ -139,7 +128,6 @@ async def process_single_variant(
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # API Call
     try:
         result = await create_shopify_product(
             shop=shop_domain, 
@@ -171,14 +159,12 @@ async def process_single_variant(
     # ==========================================
     db2 = SessionLocal()
     try:
-        # Product ko fresh session se fetch karo
         new_product_fresh = db2.query(Product).filter(Product.asin == parent_asin_upper).first()
         if new_product_fresh:
             new_product_fresh.shopify_product_id = shopify_id
             new_product_fresh.shopify_status = "active"
             print(f"✅ [DB] Shopify ID updated in DB!", flush=True)
         
-        # Store count update (fresh session se)
         store_fresh = db2.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
         if store_fresh:
             store_fresh.product_count = (store_fresh.product_count or 0) + 1
