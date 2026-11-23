@@ -807,131 +807,131 @@ def _delivery(doc):
     return {"text": primary, "fastest_text": secondary, "options": unique, "location": location}
 
 
-def _is_real_atc_visible(doc, html_text: str) -> bool:
-    """
-    Returns True ONLY when Amazon is directly selling the product with a
-    visible 'Add to Cart' button.
+# def _is_real_atc_visible(doc, html_text: str) -> bool:
+#     """
+#     Returns True ONLY when Amazon is directly selling the product with a
+#     visible 'Add to Cart' button.
 
-    Two-step logic:
-    STEP A — Page-level hard signals (fast text check, no DOM needed):
-        • Captcha/bot page       → False
-        • "Currently unavailable" → False
-        • "See all buying options" / "Other sellers" anywhere on page → False
-          (Amazon is NOT the direct seller; ATC button in DOM is a ghost form)
+#     Two-step logic:
+#     STEP A — Page-level hard signals (fast text check, no DOM needed):
+#         • Captcha/bot page       → False
+#         • "Currently unavailable" → False
+#         • "See all buying options" / "Other sellers" anywhere on page → False
+#           (Amazon is NOT the direct seller; ATC button in DOM is a ghost form)
 
-    STEP B — DOM check: id="add-to-cart-button" must exist, be visible,
-        and NOT be inside a nav-assist / hidden container.
-    """
-    html_lower = html_text.lower()
+#     STEP B — DOM check: id="add-to-cart-button" must exist, be visible,
+#         and NOT be inside a nav-assist / hidden container.
+#     """
+#     html_lower = html_text.lower()
 
-    # ── STEP A-1: Bot / Captcha ─────────────────────────────────────────
-    captcha_sigs = [
-        "validatecaptcha", "not a robot",
-        "api-services-support@amazon.com", "robot check",
-    ]
-    if any(s in html_lower for s in captcha_sigs):
-        print("[STOCK][BOT] Captcha/bot page → False", flush=True)
-        return False
+#     # ── STEP A-1: Bot / Captcha ─────────────────────────────────────────
+#     captcha_sigs = [
+#         "validatecaptcha", "not a robot",
+#         "api-services-support@amazon.com", "robot check",
+#     ]
+#     if any(s in html_lower for s in captcha_sigs):
+#         print("[STOCK][BOT] Captcha/bot page → False", flush=True)
+#         return False
 
-    # ── STEP A-2: Explicit out-of-stock text ────────────────────────────
-    oos_sigs = [
-        "currently unavailable",
-        "we don't know when or if this item will be back in stock",
-        "not available for purchase",
-    ]
-    if any(s in html_lower for s in oos_sigs):
-        print("[STOCK][OOS] Explicit OOS text → False", flush=True)
-        return False
+#     # ── STEP A-2: Explicit out-of-stock text ────────────────────────────
+#     oos_sigs = [
+#         "currently unavailable",
+#         "we don't know when or if this item will be back in stock",
+#         "not available for purchase",
+#     ]
+#     if any(s in html_lower for s in oos_sigs):
+#         print("[STOCK][OOS] Explicit OOS text → False", flush=True)
+#         return False
 
-    # ── STEP A-3: "See All Buying Options" = Amazon NOT direct seller ───
-    # Amazon still renders id="add-to-cart-button" in DOM even on these pages
-    # (inside a hidden ghost form). We must reject the page BEFORE DOM check.
-    # This is the fix for the false-positive on B07RPR83DV type pages.
-    buying_opts_sigs = [
-        "see all buying options",
-        "available at a lower price from other sellers",
-        "other sellers on amazon",
-    ]
-    # Check ONLY inside the visible buybox area (not buried in JS/scripts)
-    # We use the #desktop_buybox / #buybox / #apex_desktop text, not full html
-    buybox_el = (
-        doc.find(id="desktop_buybox")
-        or doc.find(id="buybox")
-        or doc.find(id="apex_desktop")
-        or doc.find(id="centerCol")  # fallback container
-    )
-    buybox_text = (buybox_el.get_text(" ", strip=True).lower() if buybox_el else "")
+#     # ── STEP A-3: "See All Buying Options" = Amazon NOT direct seller ───
+#     # Amazon still renders id="add-to-cart-button" in DOM even on these pages
+#     # (inside a hidden ghost form). We must reject the page BEFORE DOM check.
+#     # This is the fix for the false-positive on B07RPR83DV type pages.
+#     buying_opts_sigs = [
+#         "see all buying options",
+#         "available at a lower price from other sellers",
+#         "other sellers on amazon",
+#     ]
+#     # Check ONLY inside the visible buybox area (not buried in JS/scripts)
+#     # We use the #desktop_buybox / #buybox / #apex_desktop text, not full html
+#     buybox_el = (
+#         doc.find(id="desktop_buybox")
+#         or doc.find(id="buybox")
+#         or doc.find(id="apex_desktop")
+#         or doc.find(id="centerCol")  # fallback container
+#     )
+#     buybox_text = (buybox_el.get_text(" ", strip=True).lower() if buybox_el else "")
 
-    # Also check the full html_lower for these signals — they are unique enough
-    if any(s in buybox_text for s in buying_opts_sigs) or \
-       any(s in html_lower for s in buying_opts_sigs):
-        print("[STOCK][BUYING-OPTS] 'See All Buying Options'/'Other Sellers' found → False", flush=True)
-        return False
+#     # Also check the full html_lower for these signals — they are unique enough
+#     if any(s in buybox_text for s in buying_opts_sigs) or \
+#        any(s in html_lower for s in buying_opts_sigs):
+#         print("[STOCK][BUYING-OPTS] 'See All Buying Options'/'Other Sellers' found → False", flush=True)
+#         return False
 
-    # ── STEP B: DOM check for real visible ATC button ───────────────────
-    candidates = doc.find_all(
-        ["input", "button"],
-        id=re.compile(r"^add-to-cart-button$", re.IGNORECASE),
-    )
-    if not candidates:
-        candidates = doc.find_all(
-            id=re.compile(r"^submit\.add-to-cart$", re.IGNORECASE)
-        )
+#     # ── STEP B: DOM check for real visible ATC button ───────────────────
+#     candidates = doc.find_all(
+#         ["input", "button"],
+#         id=re.compile(r"^add-to-cart-button$", re.IGNORECASE),
+#     )
+#     if not candidates:
+#         candidates = doc.find_all(
+#             id=re.compile(r"^submit\.add-to-cart$", re.IGNORECASE)
+#         )
 
-    if not candidates:
-        print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
-        return False
+#     if not candidates:
+#         print("[STOCK] No id='add-to-cart-button' in DOM → False", flush=True)
+#         return False
 
-    for tag in candidates:
-        # B-1. nav-assist id on tag itself
-        tag_id = (tag.get("id") or "").lower()
-        if "nav-assist" in tag_id:
-            print("[STOCK][SKIP] nav-assist id on tag → skip", flush=True)
-            continue
+#     for tag in candidates:
+#         # B-1. nav-assist id on tag itself
+#         tag_id = (tag.get("id") or "").lower()
+#         if "nav-assist" in tag_id:
+#             print("[STOCK][SKIP] nav-assist id on tag → skip", flush=True)
+#             continue
 
-        # B-2. Walk ALL ancestors — nav-assist container / hidden parent
-        skip = False
-        for parent in tag.parents:
-            if not hasattr(parent, "get"):
-                break
-            pid    = (parent.get("id")    or "").lower()
-            pcls   = " ".join(parent.get("class") or []).lower()
-            pstyle = (parent.get("style") or "").replace(" ", "").lower()
+#         # B-2. Walk ALL ancestors — nav-assist container / hidden parent
+#         skip = False
+#         for parent in tag.parents:
+#             if not hasattr(parent, "get"):
+#                 break
+#             pid    = (parent.get("id")    or "").lower()
+#             pcls   = " ".join(parent.get("class") or []).lower()
+#             pstyle = (parent.get("style") or "").replace(" ", "").lower()
 
-            if "nav-assist" in pid or "nav-assist" in pcls:
-                print("[STOCK][SKIP] Inside nav-assist container → skip", flush=True)
-                skip = True; break
-            if "display:none" in pstyle or "visibility:hidden" in pstyle:
-                print("[STOCK][SKIP] Ancestor display:none → skip", flush=True)
-                skip = True; break
-            if any(c in pcls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
-                print("[STOCK][SKIP] Ancestor aok-hidden → skip", flush=True)
-                skip = True; break
-        if skip:
-            continue
+#             if "nav-assist" in pid or "nav-assist" in pcls:
+#                 print("[STOCK][SKIP] Inside nav-assist container → skip", flush=True)
+#                 skip = True; break
+#             if "display:none" in pstyle or "visibility:hidden" in pstyle:
+#                 print("[STOCK][SKIP] Ancestor display:none → skip", flush=True)
+#                 skip = True; break
+#             if any(c in pcls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
+#                 print("[STOCK][SKIP] Ancestor aok-hidden → skip", flush=True)
+#                 skip = True; break
+#         if skip:
+#             continue
 
-        # B-3. Hidden attrs on the tag itself
-        style = (tag.get("style") or "").replace(" ", "").lower()
-        if "display:none" in style or "visibility:hidden" in style:
-            print("[STOCK][SKIP] Tag style hidden → skip", flush=True)
-            continue
-        if (tag.get("aria-hidden") or "").lower() == "true":
-            print("[STOCK][SKIP] Tag aria-hidden=true → skip", flush=True)
-            continue
-        if (tag.get("type") or "").lower() == "hidden":
-            print("[STOCK][SKIP] Tag type=hidden → skip", flush=True)
-            continue
-        tag_cls = " ".join(tag.get("class") or []).lower()
-        if any(c in tag_cls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
-            print("[STOCK][SKIP] Tag aok-hidden class → skip", flush=True)
-            continue
+#         # B-3. Hidden attrs on the tag itself
+#         style = (tag.get("style") or "").replace(" ", "").lower()
+#         if "display:none" in style or "visibility:hidden" in style:
+#             print("[STOCK][SKIP] Tag style hidden → skip", flush=True)
+#             continue
+#         if (tag.get("aria-hidden") or "").lower() == "true":
+#             print("[STOCK][SKIP] Tag aria-hidden=true → skip", flush=True)
+#             continue
+#         if (tag.get("type") or "").lower() == "hidden":
+#             print("[STOCK][SKIP] Tag type=hidden → skip", flush=True)
+#             continue
+#         tag_cls = " ".join(tag.get("class") or []).lower()
+#         if any(c in tag_cls for c in ["aok-hidden", "a-hidden", "aok-offscreen"]):
+#             print("[STOCK][SKIP] Tag aok-hidden class → skip", flush=True)
+#             continue
 
-        # ✅ All checks passed — real visible Add to Cart button
-        print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
-        return True
+#         # ✅ All checks passed — real visible Add to Cart button
+#         print("[STOCK][MATCH] Real visible ATC button found → True", flush=True)
+#         return True
 
-    print("[STOCK] All candidates excluded → False", flush=True)
-    return False
+#     print("[STOCK] All candidates excluded → False", flush=True)
+#     return False
 
 
 def _buybox(doc, site):
