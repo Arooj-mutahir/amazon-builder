@@ -69,9 +69,14 @@ def _product_data(product, site, locale, postal_code=None, want_reviews=False, a
 
 def details(product, country=None, language=None, postal_code=None):
     site, locale = context(country, language)
-    _, data = _product_data(product, site, locale, postal_code, want_reviews=True, attempts=REVIEW_ATTEMPTS_DETAILS)
+    # 🔥 YAHAN CHANGE: `_` ki jagah `html` use karo
+    html, data = _product_data(product, site, locale, postal_code, want_reviews=True, attempts=REVIEW_ATTEMPTS_DETAILS)
     data["asin"] = data.get("asin") or product
     data["link"] = P.product_link(site, data["asin"])
+    
+    # 🔥 YEH NAYA LINE ADD KARO (raw_html return karne ke liye)
+    data["raw_html"] = html
+    
     return data
 
 

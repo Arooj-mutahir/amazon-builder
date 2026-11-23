@@ -12,7 +12,7 @@ Surfaces parsed here:
                                   variation matrix, inline top reviews, the
                                   "Customers say" AI summary
   offers_page(html, site)         the aodAjaxMain offer list
-  bestsellers_page(html, site)    /gp/bestsellers | new-releases |
+  bestsellers_page(html, site)    /gp/bestsellers | new-releases | 
                                   movers-and-shakers | most-wished-for |
                                   most-gifted grids (+ the ACP page for ranks
                                   31-50) and the category tree
@@ -42,7 +42,7 @@ from bs4 import BeautifulSoup
 
 # Localized price text -> float. Same algorithm as airbnb.parsers.parse_amount,
 # kept here so the amazon package runs standalone (open-source kit).
-_AMOUNT_START_RE = re.compile(r"\d[\d.,  \s]*")
+_AMOUNT_START_RE = re.compile(r"\d[\d.,   \s]*")
 
 
 def parse_amount(text):
@@ -56,7 +56,7 @@ def parse_amount(text):
     if not m:
         return None
     negative = bool(re.search(r"[-−–]\s*[^\d]*$", text[:m.start()]))
-    s = re.sub(r"[\s  ]", "", m.group())
+    s = re.sub(r"[\s  ]", "", m.group())
     if "," in s and "." in s:
         if s.rfind(",") > s.rfind("."):          # 8.104,64 (comma decimal)
             s = s.replace(".", "").replace(",", ".")
@@ -81,9 +81,9 @@ _ASIN_RE = re.compile(r"/(?:dp|gp/product|gp/aw/d|product-reviews)/([A-Z0-9]{10}
 _ASIN_ANY_RE = re.compile(r"\b([A-Z0-9]{10})\b")
 _NODE_RE = re.compile(r"(?:node=|rh=n(?:%3A|:))(\d+)")
 _RATING_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:out of|von|sur|su|de|of)\s*5", re.I)
-_COUNT_RE = re.compile(r"(\d[\d,.\s ]*)")
+_COUNT_RE = re.compile(r"(\d[\d,.\s  ]*)")
 _PERCENT_RE = re.compile(r"(-?\d+(?:[.,]\d+)?)\s*%")
-_RANK_RE = re.compile(r"#?\s*([\d,. ]+)\s+(?:in|en|dans|in der|su)\s+([^(#\n]+?)(?:\s*\(|\s*$|\s+#)")
+_RANK_RE = re.compile(r"#?\s*([\d,. ]+)\s+(?:in|en|dans|in der|su)\s+([^(#\n]+?)(?:\s*\(|\s*$|\s+#)")
 _HIST_RE = re.compile(r"(\d+)\s*(?:percent|%)[^\d]*(\d)\s*star", re.I)
 _BOUGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*([KkMm])?\+?\s*(?:bought|purchased|gekauft|comprado|achetés|acquistato)", re.I)
 _CURRENCY_SYMBOLS = {"$": "USD", "US$": "USD", "£": "GBP", "€": "EUR", "₹": "INR", "¥": "JPY", "￥": "JPY",
@@ -484,8 +484,8 @@ def search_page(html_text, site):
         if parsed:
             results.append(parsed)
     info = first_text(doc, '[data-component-type="s-result-info-bar"] span.a-size-base, [data-component-type="s-result-info-bar"]') or ""
-    total_match = re.search(r"of\s+(?:over\s+|more than\s+)?([\d,. ]+)\s+results", info) or \
-        re.search(r"([\d,. ]+)\s+results", info)
+    total_match = re.search(r"of\s+(?:over\s+|more than\s+)?([\d,. ]+)\s+results", info) or \
+        re.search(r"([\d,. ]+)\s+results", info)
     total = to_int(total_match.group(1)) if total_match else None
     is_over = bool(re.search(r"\b(over|more than)\b", info))
     pages = [to_int(text(p)) for p in doc.select(".s-pagination-item") if text(p) and text(p).isdigit()]
@@ -560,7 +560,7 @@ def _best_sellers_rank(doc, site):
     block = re.sub(r"\(\s*See Top \d+[^)]*\)", " ", block)
     links = {clean(a.get_text()): absolute(site, a.get("href")) for a in container.select("a[href]")}
     ranks = []
-    for match in re.finditer(r"#?\s*([\d,. ]+)\s+(?:in|en|dans|su)\s+([^(#]+?)(?=\s*\(|\s*#|$)", block):
+    for match in re.finditer(r"#?\s*([\d,. ]+)\s+(?:in|en|dans|su)\s+([^(#]+?)(?=\s*\(|\s*#|$)", block):
         rank = to_int(match.group(1))
         category = clean(match.group(2))
         if not rank or not category or category.lower().startswith("see top"):
@@ -1019,6 +1019,33 @@ def product_page(html_text, site):
     breadcrumbs = [{"name": text(a), "link": absolute(site, attr(a, "href")), "node_id": node_in(attr(a, "href"))}
                    for a in doc.select("#wayfinding-breadcrumbs_feature_div li a") if text(a)]
     videos = _videos(html_text)
+
+    # ==========================================
+    # 🔥 ADD TO CART VISIBLE CHECK (NAYA)
+    # ==========================================
+    html_lower = html_text.lower()
+    is_add_to_cart_visible = False
+    
+    if "captcha" not in html_lower and "not a robot" not in html_lower:
+        if "currently unavailable" not in html_lower and "out of stock" not in html_lower:
+            button_pattern = r'<input[^>]*id=["\']add-to-cart-button["\'][^>]*>'
+            matches = list(re.finditer(button_pattern, html_text, re.IGNORECASE))
+            
+            for match in matches:
+                start_idx = max(0, match.start() - 1000)
+                context = html_lower[start_idx:match.start()]
+                button_tag = match.group(0).lower()
+                
+                if 'nav-assist' in context or 'display: none' in context or 'aok-hidden' in context:
+                    continue
+                if 'display: none' in button_tag or 'visibility: hidden' in button_tag or 'aria-hidden="true"' in button_tag:
+                    continue
+                
+                is_add_to_cart_visible = True
+                break
+
+    stock_quantity = 100 if is_add_to_cart_visible else 0
+
     return {
         "asin": asin,
         "title": first_text(doc, "#productTitle") or first_text(doc, "#title"),
@@ -1055,6 +1082,8 @@ def product_page(html_text, site):
         "has_inline_reviews": bool(reviews),
         "important_information": first_text(doc, "#important-information"),
         "warranty": first_text(doc, "#warrantyInfo"),
+        "is_add_to_cart_visible": is_add_to_cart_visible,  # 🔥 NAYA
+        "stock_quantity": stock_quantity,                  # 🔥 NAYA
         "country": site["country"],
         "domain": site["host"],
     }
@@ -1148,7 +1177,7 @@ def bestseller_card(card, site, meta=None):
     link_el = first(card, "a.a-link-normal[href*='/dp/']")
     rating_el = first(card, "a[aria-label*='out of 5']") or first(card, "i.a-icon-star-small")
     rating_label = attr(rating_el, "aria-label") or first_text(rating_el, ".a-icon-alt")
-    count = to_int(re.search(r"stars?,\s*([\d,. ]+)", rating_label or "").group(1)) if rating_label and re.search(r"stars?,\s*([\d,. ]+)", rating_label) else None
+    count = to_int(re.search(r"stars?,\s*([\d,. ]+)", rating_label or "").group(1)) if rating_label and re.search(r"stars?,\s*([\d,. ]+)", rating_label) else None
     if count is None:
         count = to_int(first_text(card, "span.a-size-small"))
     price_text = first_text(card, ".p13n-sc-price, ._cDEzb_p13n-sc-price_3mJ9Z, span.a-color-price, .a-price .a-offscreen")
