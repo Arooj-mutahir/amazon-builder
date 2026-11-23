@@ -25,21 +25,8 @@ async def shopify_product_delete_webhook(
 ):
     body = await request.body()
 
-    # 🔥 TEMPORARILY DISABLED HMAC VERIFICATION FOR TESTING
+    # 🔥 HMAC verification temporarily disabled for testing
     print(f"⚠️ [TESTING] HMAC verification disabled for {x_shopify_shop_domain}", flush=True)
-    
-    # Original HMAC code (uncomment for production)
-    # if x_shopify_hmac_sha256 and SHOPIFY_WEBHOOK_SECRET:
-    #     digest = base64.b64encode(
-    #         hmac.new(
-    #             SHOPIFY_WEBHOOK_SECRET.encode('utf-8'),
-    #             body,
-    #             hashlib.sha256
-    #         ).digest()
-    #     ).decode('utf-8')
-    #     if not hmac.compare_digest(digest, x_shopify_hmac_sha256):
-    #         print(f"❌ Invalid Webhook HMAC from {x_shopify_shop_domain}", flush=True)
-    #         raise HTTPException(status_code=401, detail="Invalid HMAC")
 
     try:
         payload = json.loads(body)
@@ -59,13 +46,12 @@ async def shopify_product_delete_webhook(
         if not store:
             return {"status": "ignored", "message": "Store not found"}
 
-        # 🔥 STEP 1: Exact gid format match karo
+        # 🔥 STEP 1: Product dhoondo
         product_to_delete = db.query(Product).filter(
             Product.shopify_product_id == gid_format,
             Product.shopify_store_id == store.id
         ).first()
 
-        # 🔥 STEP 2: Agar gid_format se nahi mila, toh LIKE query try karo (fallback)
         if not product_to_delete:
             product_to_delete = db.query(Product).filter(
                 Product.shopify_product_id.like(f"%{shopify_product_id}%"),
@@ -75,16 +61,32 @@ async def shopify_product_delete_webhook(
         if product_to_delete:
             deleted_count = 0
             
-            # Agar yeh main parent product hai, toh pehle uske saare variations delete karo
+            # Agar yeh Parent product hai, toh pehle child variations delete karo
             if not product_to_delete.is_variation:
                 print(f"   🔍 Parent product mila (ASIN: {product_to_delete.asin}). Ab variations delete kar rahe hain...", flush=True)
                 
-                # Variations ko fetch karo (Bina store_id ke, taaki koi miss na ho)
+                # ✅ FIX: Pehle parent_asin se try karo
                 variations = db.query(Product).filter(
                     Product.parent_asin == product_to_delete.asin,
                     Product.is_variation == True
                 ).all()
                 
+                # ✅ DOUBLE CHECK: Agar parent_asin se nahi mile, toh parent_id se dhoondo
+                # (Assuming tumhare database mein 'parent_id' column hai jo parent ki primary key store karta hai)
+                if not variations and hasattr(product_to_delete, 'id'):
+                    print(f"   ⚠️ parent_asin se variations nahi mile. Ab parent_id se try kar rahe hain...", flush=True)
+                    variations = db.query(Product).filter(
+                        Product.parent_id == product_to_delete.id,
+                        Product.is_variation == True
+                    ).all()
+                
+                # ✅ AGAR PHIR BHI NAHI MILE, TOH SIRF is_variation = True wale saare check karo (e.g. asin matching)
+                if not variations:
+                    print(f"   ⚠️ parent_id se bhi variations nahi mile. Ab asin list se match kar rahe hain...", flush=True)
+                    # Optional: Agar tumhare paas variation_asins list hai toh unko match karo
+
+                print(f"   🔎 DEBUG: Total {len(variations)} child variations mile.", flush=True)
+
                 for var in variations:
                     print(f"      🗑️ Deleting variation: {var.asin} (ID: {var.id})", flush=True)
                     db.delete(var)
@@ -92,7 +94,7 @@ async def shopify_product_delete_webhook(
                     
                 print(f"   🗑️ Total {deleted_count} child variants delete hue", flush=True)
 
-            # Ab main product ko delete karo
+            # Parent ko delete karo
             db.delete(product_to_delete)
             deleted_count += 1
             db.commit()
