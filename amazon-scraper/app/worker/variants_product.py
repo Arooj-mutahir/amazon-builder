@@ -125,15 +125,12 @@ async def process_multi_variant(
                 v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
                 v_images = v.get("images") or []
 
-                # 🔥 NAYA LOGIC (Child variants ke liye): Parent ka hi flag use karenge
-                if is_add_to_cart_visible:
-                    v_resolved = 100
-                    v_in_stock = True
-                else:
-                    v_resolved = 0
-                    v_in_stock = False
+                # 🔥 FIX: Child variations ka stock parent ke stock ke barabar set karo
+                # Agar future mein har variation ka alag stock chahiye, toh yahan v.get("stock_qty") use karna
+                v_resolved = parent_stock
+                v_in_stock = parent_in_stock
 
-                v_avail = "In Stock" if v_in_stock else "Out of Stock"
+                v_avail = availability_str
                 v_title = f"{main_data.get('title', '')} - {v.get('title', '')}" if v.get('title') else main_data.get("title", "")
 
                 child_existing = db_save.query(Product).filter(Product.asin == v_asin_upper).first()

@@ -146,8 +146,9 @@ async def _background_fetch_and_push(
         if bridge_v:
             if bridge_v.get("price") and bridge_v["price"] > 0:
                 v["price"] = bridge_v["price"]
-            v["in_stock"] = _get_availability(bridge_v)
-            v["stock_qty"] = bridge_v.get("stock_qty")
+            # 🔥 FIX: stock_quantity use karo, stock_qty nahi
+            v["in_stock"] = bridge_v.get("is_available", bridge_v.get("in_stock"))
+            v["stock_qty"] = bridge_v.get("stock_quantity", bridge_v.get("stock_qty"))
 
     # ============================================================
     # PHASE 4: NAYA DB session banao aur save karo
