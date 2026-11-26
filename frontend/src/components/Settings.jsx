@@ -1,5 +1,5 @@
 // src/components/Settings.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios'; 
 import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles, TrendingUp, Lock } from 'lucide-react';
 import { usePlan } from '../hooks/usePlan';
@@ -9,6 +9,13 @@ const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/s
 export default function Settings({ onBack, storeId }) {
   const { isAdvance } = usePlan(); 
   
+  // 🔥 FIX: Jab storeId change ho, toh purani localStorage clear ho jaye
+  useEffect(() => {
+    if (storeId) {
+      // localStorage.clear(); // Optional: Agar purana data nahi chahiye
+    }
+  }, [storeId]);
+
   const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(localStorage.getItem('global_extra_percent') || '0');
@@ -34,21 +41,25 @@ export default function Settings({ onBack, storeId }) {
     localStorage.setItem('global_tax_rate', finalTaxRate.toString());
     localStorage.setItem('global_compare_markup', finalComparePrice.toString());
 
+    const payload = {
+      store_id: storeId,
+      default_markup: parseFloat(markup || 0),                    
+      default_markup_type: markupType,                            
+      default_extra_percent: finalExtraPercent,                   
+      default_tax_rate: finalTaxRate,                             
+      default_compare_price_markup: finalComparePrice,            
+      default_stock_qty: 100, 
+      shopify_location_id: null
+    };
+
+    // 🔥 DEBUG LOG
+    console.log("🚀 BHEJ RAHE HAIN BACKEND KO:", payload);
+
     try {
-      // 🔥 ASLI FIX: Backend ko 'default_' prefix ke sath bhejo
-      await axios.post(`${API_URL}/app/save-settings`, {
-        store_id: storeId,
-        default_markup: parseFloat(markup || 0),                    
-        default_markup_type: markupType,                            
-        default_extra_percent: finalExtraPercent,                   
-        default_tax_rate: finalTaxRate,                             
-        default_compare_price_markup: finalComparePrice,            
-        default_stock_qty: 100, 
-        shopify_location_id: null
-      });
-      
+      await axios.post(`${API_URL}/app/save-settings`, payload);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+      alert("✅ Settings saved successfully! Ab page refresh karo.");
     } catch (error) {
       console.error("Failed to save to DB", error);
       alert("Settings could not be saved to database. Check backend terminal.");
