@@ -3,18 +3,23 @@ import traceback
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
+from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import SessionLocal, get_db
 from app.models import ShopifyStore, Product
 from app.services.amazon_bridge import get_shopify_product_data
 
 from app.worker.single_product import process_single_variant
 from app.worker.variants_product import process_multi_variant
+from app.worker.sync_job import sync_prices_job  # 🔥 IMPORTANT IMPORT
 
 from .helpers import (
     extract_asin_from_url, _resolve_markup, calculate_final_price, _build_clean_variants, _get_valid_access_token
 )
 from app.worker.stock_utils import _get_availability, _resolve_stock
+
+router = APIRouter()
 
 async def _background_fetch_and_push(
     amazon_url: str, shop_domain: str, store_id: int, 
@@ -152,7 +157,7 @@ async def _background_fetch_and_push(
             print("❌ Store disappeared during scraping", flush=True)
             return
 
-        # 🔥 RE-CHECK TRIAL EXPIRY (Agar scraping ke dauran expire ho gaya)
+        # 🔥 RE-CHECK TRIAL EXPIRY
         if store_fresh.trial_ends_at and store_fresh.trial_ends_at < datetime.utcnow():
             if store_fresh.plan_status == "active" and not store_fresh.plan_expires_at:
                 print(f"⏰ TRIAL EXPIRED DURING SCRAPE: {store_fresh.shop_domain}. Import blocked.", flush=True)
@@ -202,4 +207,36 @@ async def _background_fetch_and_push(
             if db2.is_active:
                 db2.close()
         except:
-            pass  # Already closed by process_multi_variant
+            pass
+
+
+# ============================================================
+# 🚀 MANUAL SYNC ENDPOINT (NAYA)
+# ============================================================
+@router.post("/manual-sync")
+async def trigger_manual_sync(
+    store_id: int = Query(..., description="Store ID to sync"),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Manual sync trigger karta hai. Yeh route frontend se call hota hai.
+    """
+    store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+
+    # 🔥 Plan check (Advance only)
+    if (store.plan or "").lower() != "advance":
+        raise HTTPException(status_code=403, detail="Manual sync is only available for Advance plan.")
+
+    print(f"🔄 [MANUAL SYNC] Triggered for store {store.shop_domain} (ID: {store.id})", flush=True)
+    
+    # 🔥 Background task add karo
+    background_tasks.add_task(sync_prices_job, store_id=store.id)
+
+    return {
+        "status": "success",
+        "message": f"Manual sync started for {store.shop_domain}. Check logs for progress.",
+        "store_id": store.id
+    }
