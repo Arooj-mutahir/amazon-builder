@@ -187,5 +187,14 @@ async def trigger_manual_sync(
         raise HTTPException(status_code=404, detail="Store not found.")
 
     print(f"🚀 [MANUAL TRIGGER] Sync job started for Store ID: {store_id} ({store.shop_domain})", flush=True)
-    background_tasks.add_task(sync_prices_job, store_id=store_id)
-    return {"status": "success", "message": f"Sync started for store ID {store_id}.", "store_domain": store.shop_domain}
+
+    # 🔥 FIX: BackgroundTasks ke bajaye direct await (testing ke liye)
+    try:
+        await sync_prices_job(store_id=store_id)
+        print(f"✅ [MANUAL TRIGGER] Sync completed for store {store_id}", flush=True)
+    except Exception as e:
+        print(f"❌ [MANUAL TRIGGER] Sync failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+
+    return {"status": "success", "message": f"Sync completed for store ID {store_id}.", "store_domain": store.shop_domain}
