@@ -46,57 +46,43 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
     return fallback_location
 
 
-# ============================================================
-# ✅ Store eligible for sync?
-# ============================================================
 def _is_store_sync_eligible(store, db) -> bool:
-    """
-    Advance plan + active + auto_sync ON + not expired → True
-    warna False.
-    """
+    """Check if store is eligible for sync."""
     if not store:
         return False
 
-    # 🔥 FIX #1: TRIAL EXPIRY CHECK (Sabse pehle)
     if store.trial_ends_at and store.trial_ends_at < datetime.utcnow():
-        # Trial khatam, aur agar plan_expires_at NULL hai (matlab paise nahi diye)
         if not store.plan_expires_at and (store.plan_status or "").lower() == "active":
-            print(f"⏰ Trial expired for {store.shop_domain} → downgrading to basic/expired", flush=True)
+            print(f"⏰ Trial expired for {store.shop_domain} → downgrading", flush=True)
             store.plan = "basic"
             store.plan_status = "expired"
             store.auto_sync_enabled = False
             try:
                 db.commit()
-            except Exception as e:
-                print(f"   ⚠️ Could not downgrade store {store.id}: {e}", flush=True)
+            except Exception:
                 db.rollback()
             return False
 
-    # ✅ FIX #2: Case-insensitive plan check
     if (store.plan or "").lower() != "advance":
         return False
 
-    # ✅ FIX #3: plan_status check
     plan_status = getattr(store, "plan_status", None)
     if plan_status and plan_status.lower() != "active":
         return False
 
-    # ✅ FIX #4: auto_sync ON hona chahiye
     if not bool(getattr(store, "auto_sync_enabled", False)):
         return False
 
-    # ✅ FIX #5: Paid plan expiry check
     expires_at = getattr(store, "plan_expires_at", None)
     if expires_at and expires_at < datetime.utcnow():
-        print(f"   ⏰ Plan expired for {store.shop_domain} → downgrading to basic", flush=True)
+        print(f"   ⏰ Plan expired for {store.shop_domain} → downgrading", flush=True)
         store.plan = "basic"
         if hasattr(store, "plan_status"):
             store.plan_status = "expired"
         store.auto_sync_enabled = False
         try:
             db.commit()
-        except Exception as e:
-            print(f"   ⚠️ Could not downgrade store {store.id}: {e}", flush=True)
+        except Exception:
             db.rollback()
         return False
 
@@ -133,7 +119,7 @@ async def sync_prices_job(store_id: int = None):
                     _eligible_cache[store.id] = _is_store_sync_eligible(store, db)
 
                 if not _eligible_cache[store.id]:
-                    print(f"⏭️  Skipping {product.asin} — store {store.shop_domain} not eligible (plan={store.plan}, status={getattr(store, 'plan_status', 'N/A')})", flush=True)
+                    print(f"⏭️  Skipping {product.asin} — store not eligible", flush=True)
                     continue
 
                 print(f"=======================================================", flush=True)
@@ -144,11 +130,10 @@ async def sync_prices_job(store_id: int = None):
                 store_extra = float(store.default_extra_percent if store.default_extra_percent is not None else 0.0)
                 store_tax = float(store.default_tax_rate if store.default_tax_rate is not None else 0.0)
                 default_stock = int(getattr(store, "default_stock_qty", 0) or 0)
-
                 store_compare_markup = float(getattr(store, "default_compare_price_markup", 0.0) or 0.0)
 
                 markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
-                print(f"   ⚙️  UI Settings (Store #{store.id}): Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}% | Compare={store_compare_markup}%", flush=True)
+                print(f"   ⚙️  UI Settings: Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}% | Compare={store_compare_markup}%", flush=True)
 
                 child_products = []
                 if not product.is_variation:
@@ -169,16 +154,16 @@ async def sync_prices_job(store_id: int = None):
                         timeout=scrape_timeout
                     )
                 except asyncio.TimeoutError:
-                    print(f"   ⏳ Timeout ({scrape_timeout:.0f}s) fetching Amazon data for {asin_to_scrape}, skipping...", flush=True)
+                    print(f"   ⏳ Timeout fetching Amazon data", flush=True)
                     continue
                 except Exception as e:
-                    print(f"   ⚠️ Scrape failed for {asin_to_scrape}: {e}", flush=True)
+                    print(f"   ⚠️ Scrape failed: {e}", flush=True)
                     continue
 
                 latest_amazon_price = float(latest_data.get("price") or 0.0)
 
                 if latest_amazon_price <= 0:
-                    print(f"   ⚠️ Amazon Price is $0.00 for {product.asin}. Using old data if available.", flush=True)
+                    print(f"   ⚠️ Amazon Price is $0.00", flush=True)
 
                 latest_parent_stock = latest_data.get("stock_qty")
                 latest_parent_available = _get_availability(latest_data)
@@ -222,9 +207,16 @@ async def sync_prices_job(store_id: int = None):
                     v_type_label = "Parent" if not prod.is_variation else "Child"
                     print(f"      👉 ASIN {prod.asin} ({v_type_label}): Amazon=${v_amazon_price or 0.0:.2f} -> UI Final=${prod.price or 0.0:.2f} | Stock={prod.stock_quantity} ({prod.availability})", flush=True)
 
-                db.commit()
-                print(f"   💾 Database settings updated successfully.", flush=True)
+                # 🔥 HAR PRODUCT KE BAAD COMMIT KARO (Safer)
+                try:
+                    db.commit()
+                    print(f"   💾 Database updated successfully.", flush=True)
+                except Exception as commit_err:
+                    db.rollback()
+                    print(f"   ⚠️ DB Commit Failed (will retry): {commit_err}", flush=True)
+                    continue  # Agle product pe jao
 
+                # Shopify Update
                 token = await _get_valid_access_token(store, db)
                 shopify_product_id = product.shopify_product_id
                 if shopify_product_id and not str(shopify_product_id).startswith("gid://shopify/"):
@@ -245,7 +237,7 @@ async def sync_prices_job(store_id: int = None):
                     product_node = inv_result.get("data", {}).get("product")
 
                     if not product_node:
-                        print(f"   ⚠️ Product {shopify_product_id} not found by ID. Searching by SKU {product.asin}...", flush=True)
+                        print(f"   ⚠️ Product not found by ID. Searching by SKU...", flush=True)
                         search_query = """
                         query findProductBySku($query: String!) {
                           products(first: 1, query: $query) {
@@ -259,7 +251,10 @@ async def sync_prices_job(store_id: int = None):
                             product_node = nodes_found[0]
                             shopify_product_id = product_node["id"]
                             product.shopify_product_id = shopify_product_id
-                            db.commit()
+                            try:
+                                db.commit()
+                            except Exception:
+                                db.rollback()
 
                     if product_node:
                         for node in product_node.get("variants", {}).get("nodes", []):
@@ -286,7 +281,6 @@ async def sync_prices_job(store_id: int = None):
                         if store_compare_markup > 0:
                             compare_price = prod.price * (1 + (store_compare_markup / 100.0))
                             update_payload["compareAtPrice"] = f"{compare_price:.2f}"
-                            print(f"      🏷️ Setting Compare Price: ${compare_price:.2f} for {prod.asin}", flush=True)
                         else:
                             update_payload["compareAtPrice"] = None
 
@@ -315,22 +309,26 @@ async def sync_prices_job(store_id: int = None):
                     res = await shopify_graphql(store.shop_domain, token, price_mutation, {"productId": shopify_product_id, "variants": price_updates})
                     user_errors = res.get("data", {}).get("productVariantsBulkUpdate", {}).get("userErrors", [])
                     if user_errors:
-                        print(f"   ❌ Shopify Price Update Failed for {product.asin}: {user_errors}", flush=True)
+                        print(f"   ❌ Shopify Price Update Failed: {user_errors}", flush=True)
                     else:
-                        print(f"   ✅ Shopify Price + Compare Price Updated for {product.asin}", flush=True)
+                        print(f"   ✅ Shopify Price Updated", flush=True)
 
                 if stock_updates:
                     try:
                         for i in range(0, len(stock_updates), 250):
                             chunk = stock_updates[i:i+250]
                             await _set_inventory_quantities(store.shop_domain, token, chunk)
+                        print(f"   ✅ Shopify Stock Updated", flush=True)
                     except Exception as e:
                         print(f"   ⚠️ Shopify Stock update failed: {e}", flush=True)
 
             except Exception as e:
                 print(f"❌ Error checking {product.asin}: {e}", flush=True)
                 traceback.print_exc()
-                db.rollback()
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
     finally:
         db.close()
         print("\n✅ [CRON JOB] Sync Complete.\n", flush=True)
