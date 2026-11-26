@@ -1,14 +1,14 @@
-# app/api/routes/shopify/settings.py (ya jo bhi file ho)
+# app/api/routes/shopify/settings.py
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from app.database import get_db
 from app.models import ShopifyStore
-import json
 
 router = APIRouter()
 
+# 🔥 MODEL MATCH KARO (Frontend jo bhej raha hai)
 class StoreSettings(BaseModel):
     store_id: int
     default_markup: float
@@ -23,10 +23,9 @@ VALID_MARKUP_TYPES = ["percent", "fixed", "both"]
 
 @router.post("/app/save-settings")
 async def save_store_settings(settings: StoreSettings, request: Request, db: Session = Depends(get_db)):
-    # 🔥 DEBUG: Raw data check karo
+    # 🔥 DEBUG LOG: Raw data print karo
     body = await request.body()
-    print(f"📥 RAW PAYLOAD FROM FRONTEND: {body.decode()}", flush=True)
-    print(f"📦 PARSED SETTINGS: Markup={settings.default_markup}, Type={settings.default_markup_type}, Tax={settings.default_tax_rate}", flush=True)
+    print(f"📥 RAW PAYLOAD: {body.decode()}", flush=True)
 
     store = db.query(ShopifyStore).filter(ShopifyStore.id == settings.store_id).first()
     if not store:
@@ -35,7 +34,7 @@ async def save_store_settings(settings: StoreSettings, request: Request, db: Ses
     if settings.default_markup_type not in VALID_MARKUP_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid markup_type: {settings.default_markup_type}")
 
-    # 🔥 DB Update
+    # 🔥 DB UPDATE
     store.default_markup = settings.default_markup
     store.default_markup_type = settings.default_markup_type
     
@@ -55,6 +54,6 @@ async def save_store_settings(settings: StoreSettings, request: Request, db: Ses
     db.commit()
     db.refresh(store)
     
-    print(f"✅ DATABASE UPDATED: Markup={store.default_markup}, Type={store.default_markup_type}, Tax={store.default_tax_rate}, Compare={store.default_compare_price_markup}", flush=True)
+    print(f"✅ SETTINGS SAVED: Markup={store.default_markup}, Type={store.default_markup_type}, Tax={store.default_tax_rate}, Compare={store.default_compare_price_markup}", flush=True)
     
     return {"success": True, "message": "Settings saved successfully!"}

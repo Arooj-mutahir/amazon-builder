@@ -1,5 +1,5 @@
 // src/components/Settings.jsx
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import axios from 'axios'; 
 import { Save, ArrowLeft, Percent, DollarSign, Receipt, Sparkles, TrendingUp, Lock } from 'lucide-react';
 import { usePlan } from '../hooks/usePlan';
@@ -9,13 +9,6 @@ const API_URL = import.meta.env.VITE_API_URL || `${window.location.origin}/api/s
 export default function Settings({ onBack, storeId }) {
   const { isAdvance } = usePlan(); 
   
-  // 🔥 FIX: Jab storeId change ho, toh purani localStorage clear ho jaye
-  useEffect(() => {
-    if (storeId) {
-      // localStorage.clear(); // Optional: Agar purana data nahi chahiye
-    }
-  }, [storeId]);
-
   const [markup, setMarkup] = useState(localStorage.getItem('global_markup') || '0');
   const [markupType, setMarkupType] = useState(localStorage.getItem('global_markup_type') || 'percent');
   const [extraPercent, setExtraPercent] = useState(localStorage.getItem('global_extra_percent') || '0');
@@ -29,18 +22,17 @@ export default function Settings({ onBack, storeId }) {
       return;
     }
 
-    // 🔥 FIX: Basic user ke liye Advance fields force 0 karo
     const finalExtraPercent = (isAdvance && markupType === 'both') ? parseFloat(extraPercent || 0) : 0;
     const finalTaxRate = isAdvance ? parseFloat(taxRate || 0) : 0;
     const finalComparePrice = isAdvance ? parseFloat(comparePriceMarkup || 0) : 0;
 
-    // Save to LocalStorage
     localStorage.setItem('global_markup', markup);
     localStorage.setItem('global_markup_type', markupType);
     localStorage.setItem('global_extra_percent', finalExtraPercent.toString());
     localStorage.setItem('global_tax_rate', finalTaxRate.toString());
     localStorage.setItem('global_compare_markup', finalComparePrice.toString());
 
+    // 🔥 YEH PAYLOAD BACKEND KO JA RHA HAI
     const payload = {
       store_id: storeId,
       default_markup: parseFloat(markup || 0),                    
@@ -52,29 +44,25 @@ export default function Settings({ onBack, storeId }) {
       shopify_location_id: null
     };
 
-    // 🔥 DEBUG LOG
-    console.log("🚀 BHEJ RAHE HAIN BACKEND KO:", payload);
+    // 🔥 DEBUG: Browser console mein check karo
+    console.log("🚀 SENDING TO BACKEND:", payload);
 
     try {
       await axios.post(`${API_URL}/app/save-settings`, payload);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-      alert("✅ Settings saved successfully! Ab page refresh karo.");
+      alert("✅ Settings saved successfully!");
     } catch (error) {
-      console.error("Failed to save to DB", error);
-      alert("Settings could not be saved to database. Check backend terminal.");
+      console.error("❌ SAVE FAILED:", error.response?.data);
+      alert(`❌ Failed to save: ${error.response?.data?.detail || error.message}`);
     }
   };
 
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-gray-200 p-8">
-      
       {/* Header */}
       <div className="flex items-center gap-4 mb-8 border-b border-gray-100 pb-6">
-        <button 
-          onClick={onBack} 
-          className="p-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition text-gray-600"
-        >
+        <button onClick={onBack} className="p-2.5 bg-gray-50 hover:bg-gray-100 rounded-xl transition text-gray-600">
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div>
@@ -85,10 +73,8 @@ export default function Settings({ onBack, storeId }) {
         </div>
       </div>
 
-      {/* ✅ Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl relative">
-        
-        {/* 1. Markup Strategy (BASIC) */}
+        {/* 1. Markup Strategy */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2.5">Markup Strategy</label>
           <select
@@ -98,7 +84,6 @@ export default function Settings({ onBack, storeId }) {
               setMarkupType(e.target.value);
               if (e.target.value !== 'both') {
                 setExtraPercent('0');
-                localStorage.setItem('global_extra_percent', '0');
               }
             }}
           >
@@ -108,7 +93,7 @@ export default function Settings({ onBack, storeId }) {
           </select>
         </div>
 
-        {/* 2. Markup Value (BASIC) */}
+        {/* 2. Markup Value */}
         <div>
           <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
             {markupType === 'percent' ? <Percent className="w-4 h-4 text-blue-500" /> : <DollarSign className="w-4 h-4 text-green-500" />}
@@ -122,30 +107,20 @@ export default function Settings({ onBack, storeId }) {
           />
         </div>
 
-        {/* =========================================
-            ADVANCE FIELDS SECTION (Locked for Basic)
-           ========================================= */}
+        {/* 3. ADVANCE FIELDS */}
         <div className="md:col-span-2 relative">
-          
-          {/* Lock Overlay for Basic Users */}
           {!isAdvance && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300">
               <Lock className="text-gray-600 mb-2" size={28} />
               <p className="text-sm font-bold text-gray-800">Advance Plan Required</p>
               <p className="text-xs text-gray-500 mb-3">Unlock Tax, Extra %, and Compare Price logic.</p>
-              <button 
-                onClick={() => window.location.href = '/billing'} 
-                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:opacity-90"
-              >
+              <button onClick={() => window.location.href = '/billing'} className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:opacity-90">
                 Upgrade to Advance
               </button>
             </div>
           )}
 
-          {/* Ye Fields Basic pe blur rahenge */}
           <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${!isAdvance ? 'opacity-40 pointer-events-none' : ''}`}>
-            
-            {/* 3. Extra Percent (Only for Both) */}
             {markupType === 'both' && (
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
@@ -160,7 +135,6 @@ export default function Settings({ onBack, storeId }) {
               </div>
             )}
 
-            {/* 4. Tax Rate */}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-orange-500" /> Tax Rate (%)
@@ -173,7 +147,6 @@ export default function Settings({ onBack, storeId }) {
               />
             </div>
 
-            {/* 5. Compare at Price */}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2.5 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-pink-500" /> Compare at Price Markup (%)
@@ -185,19 +158,10 @@ export default function Settings({ onBack, storeId }) {
                 onChange={(e) => setComparePriceMarkup(e.target.value)}
               />
             </div>
-
           </div>
         </div>
       </div>
 
-      {/* Info Text */}
-      <div className="mt-4 max-w-4xl text-xs text-gray-500 space-y-1">
-        {markupType === 'both' && <p>* Extra percentage is applied after fixed amount markup.</p>}
-        <p>* Tax Rate will be added on top of the final calculated price.</p>
-        <p>* Compare at Price is calculated based on the final price (e.g., Final Price $100 + 20% = Compare Price $120).</p>
-      </div>
-
-      {/* Save Button */}
       <div className="mt-10 pt-6 border-t border-gray-100 flex items-center gap-4">
         <button
           onClick={handleSave}
