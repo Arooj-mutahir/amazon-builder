@@ -17,7 +17,8 @@ async def _set_inventory_quantities(shop, access_token, quantities: list) -> dic
         "input": {
             "name": "available",
             "reason": "correction",
-            "ignoreCompareQuantity": True,
+            # 🔥 FIX: ignoreCompareQuantity hata kar changeFromQuantity: null use karo
+            "changeFromQuantity": None,
             "quantities": quantities,
         }
     }
