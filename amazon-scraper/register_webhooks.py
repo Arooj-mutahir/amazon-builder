@@ -13,8 +13,18 @@ async def main():
         print(f"🔄 Found {len(stores)} stores to register webhooks for.", flush=True)
         
         webhooks_to_register = [
-            {"topic": "PRODUCTS_DELETE", "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"},
-            {"topic": "APP_UNINSTALLED", "address": f"{BACKEND_URL}/api/shopify/app/webhooks/app-uninstalled"}
+            {
+                "topic": "PRODUCTS_DELETE", 
+                "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"
+            },
+            {
+                "topic": "PRODUCTS_UPDATE", # ✅ YEH NAYA ADD KIYA HAI
+                "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-update"
+            },
+            {
+                "topic": "APP_UNINSTALLED", 
+                "address": f"{BACKEND_URL}/api/shopify/app/webhooks/app-uninstalled"
+            }
         ]
 
         webhook_mutation = """
@@ -38,9 +48,12 @@ async def main():
                         }
                     }
                     res = await shopify_graphql(store.shop_domain, store.access_token, webhook_mutation, variables)
+                    
+                    # Agar GraphQL level error aaye
                     if res and "errors" in res:
                         print(f"  ⚠️ {webhook['topic']}: {res['errors']}", flush=True)
                     else:
+                        # Agar userErrors aaye (jaise webhook pehle se register hai)
                         user_errors = res.get("data", {}).get("webhookSubscriptionCreate", {}).get("userErrors", [])
                         if user_errors:
                             print(f"  ⚠️ {webhook['topic']}: {user_errors}", flush=True)

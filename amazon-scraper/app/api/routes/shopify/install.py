@@ -114,15 +114,19 @@ async def shopify_callback(
     # ✅ WEBHOOKS REGISTER KAREIN (PRODUCTS_DELETE + APP_UNINSTALLED)
     # ============================================
     webhooks_to_register = [
-        {
-            "topic": "PRODUCTS_DELETE",
-            "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"
-        },
-        {
-            "topic": "APP_UNINSTALLED",
-            "address": f"{BACKEND_URL}/api/shopify/app/webhooks/app-uninstalled"
-        }
-    ]
+    {
+        "topic": "PRODUCTS_DELETE",
+        "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-delete"
+    },
+    {
+        "topic": "PRODUCTS_UPDATE",  # <--- YEH ADD KAREIN
+        "address": f"{BACKEND_URL}/api/shopify/app/webhooks/products-update"
+    },
+    {
+        "topic": "APP_UNINSTALLED",
+        "address": f"{BACKEND_URL}/api/shopify/app/webhooks/app-uninstalled"
+    }
+]
 
     webhook_mutation = """
     mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
