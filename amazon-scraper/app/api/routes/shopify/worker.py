@@ -12,7 +12,7 @@ from app.services.amazon_bridge import get_shopify_product_data
 
 from app.worker.single_product import process_single_variant
 from app.worker.variants_product import process_multi_variant
-from app.worker.sync_job import sync_prices_job  # 🔥 IMPORTANT IMPORT
+from app.worker.sync_job import sync_prices_job
 
 from .helpers import (
     extract_asin_from_url, _resolve_markup, calculate_final_price, _build_clean_variants, _get_valid_access_token
@@ -29,9 +29,7 @@ async def _background_fetch_and_push(
 ):
     print(f"\n🔥🔥🔥 BACKGROUND JOB STARTED for {amazon_url} 🔥🔥🔥", flush=True)
 
-    # ============================================================
     # PHASE 1: Store fetch & TRIAL/LIMIT CHECK
-    # ============================================================
     db = SessionLocal()
     try:
         store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
@@ -39,13 +37,11 @@ async def _background_fetch_and_push(
             print("❌ Store not found", flush=True)
             return
 
-        # 🔥 TRIAL EXPIRY CHECK
         if store.trial_ends_at and store.trial_ends_at < datetime.utcnow():
             if store.plan_status == "active" and not store.plan_expires_at:
                 print(f"⏰ TRIAL EXPIRED: Store {store.shop_domain}. Import blocked.", flush=True)
                 return
 
-        # 🔥 PLAN LIMIT CHECK
         if (store.plan or "").lower() == "basic":
             limit = 1000
         else:
@@ -78,9 +74,7 @@ async def _background_fetch_and_push(
         except:
             pass
 
-    # ============================================================
-    # PHASE 2: Scraping (BINA DB session ke)
-    # ============================================================
+    # PHASE 2: Scraping
     try:
         main_data = await get_shopify_product_data(asin_quick, default_stock_qty=default_stock_qty)
         print(f"✅ Bridge Data Fetched: {str(main_data.get('title'))[:60]}...", flush=True)
@@ -90,9 +84,7 @@ async def _background_fetch_and_push(
         traceback.print_exc()
         return
 
-    # ============================================================
-    # PHASE 3: Data process karo (pure Python)
-    # ============================================================
+    # PHASE 3: Data process
     final_price = calculate_final_price(
         main_data.get("price", 0.0), user_markup, user_markup_type, user_extra, user_tax
     )
@@ -111,11 +103,11 @@ async def _background_fetch_and_push(
     final_tags.append(main_data["asin"])
     final_tags = list(set(final_tags))
 
-    parent_available = _get_availability(main_data)
-    # 🔥 FIX: stock_qty ki jagah stock_quantity use karo
-    parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_quantity"), default_stock_qty)
-    parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
-    parent_stock = parent_stock_qty or 0
+    # 🔥 FIX: Seedha main_data se is_add_to_cart_visible uthao
+    parent_in_stock = main_data.get("is_add_to_cart_visible", False)
+    parent_stock = 100 if parent_in_stock else 0
+    
+    print(f"📦 [WORKER] Parent Stock: {parent_stock} | In Stock: {parent_in_stock}", flush=True)
 
     shopify_payload = {
         "title":        main_data.get("title"),
@@ -133,7 +125,6 @@ async def _background_fetch_and_push(
         "details":      main_data.get("details") or {},
         "is_available": parent_in_stock,
         "in_stock":     parent_in_stock,
-        # 🔥 FIX: stock_qty ki jagah stock_quantity use karo
         "stock_quantity": parent_stock,
     }
     
@@ -146,13 +137,11 @@ async def _background_fetch_and_push(
         if bridge_v:
             if bridge_v.get("price") and bridge_v["price"] > 0:
                 v["price"] = bridge_v["price"]
-            # 🔥 FIX: stock_quantity use karo, stock_qty nahi
-            v["in_stock"] = bridge_v.get("is_available", bridge_v.get("in_stock"))
-            v["stock_qty"] = bridge_v.get("stock_quantity", bridge_v.get("stock_qty"))
+            # 🔥 FIX: Har variation ko bhi parent ka stock do
+            v["in_stock"] = parent_in_stock
+            v["stock_qty"] = parent_stock
 
-    # ============================================================
-    # PHASE 4: NAYA DB session banao aur save karo
-    # ============================================================
+    # PHASE 4: DB Save
     db2 = SessionLocal()
     try:
         store_fresh = db2.query(ShopifyStore).filter(ShopifyStore.id == store_id_local).first()
@@ -160,13 +149,11 @@ async def _background_fetch_and_push(
             print("❌ Store disappeared during scraping", flush=True)
             return
 
-        # 🔥 RE-CHECK TRIAL EXPIRY
         if store_fresh.trial_ends_at and store_fresh.trial_ends_at < datetime.utcnow():
             if store_fresh.plan_status == "active" and not store_fresh.plan_expires_at:
                 print(f"⏰ TRIAL EXPIRED DURING SCRAPE: {store_fresh.shop_domain}. Import blocked.", flush=True)
                 return
 
-        # 🔥 RE-CHECK LIMIT
         if (store_fresh.plan or "").lower() == "basic":
             limit = 1000
         else:
@@ -214,7 +201,7 @@ async def _background_fetch_and_push(
 
 
 # ============================================================
-# 🚀 MANUAL SYNC ENDPOINT (NAYA)
+# 🚀 MANUAL SYNC ENDPOINT
 # ============================================================
 @router.post("/manual-sync")
 async def trigger_manual_sync(
@@ -222,20 +209,15 @@ async def trigger_manual_sync(
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
-    """
-    Manual sync trigger karta hai. Yeh route frontend se call hota hai.
-    """
     store = db.query(ShopifyStore).filter(ShopifyStore.id == store_id).first()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
 
-    # 🔥 Plan check (Advance only)
     if (store.plan or "").lower() != "advance":
         raise HTTPException(status_code=403, detail="Manual sync is only available for Advance plan.")
 
     print(f"🔄 [MANUAL SYNC] Triggered for store {store.shop_domain} (ID: {store.id})", flush=True)
     
-    # 🔥 Background task add karo
     background_tasks.add_task(sync_prices_job, store_id=store.id)
 
     return {

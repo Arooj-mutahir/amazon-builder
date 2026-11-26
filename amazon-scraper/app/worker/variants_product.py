@@ -17,14 +17,12 @@ async def process_multi_variant(
     compare_price_markup: float = 0.0
 ):
     
-    # ✅ 1. Compare Price Logic
     if compare_price_markup > 0:
         final_price = shopify_payload.get("price", 0.0)
         compare_price = final_price * (1 + (compare_price_markup / 100.0))
         print(f"🏷️ Compare Price set: ${compare_price:.2f}", flush=True)
         shopify_payload["compare_at_price"] = f"{compare_price:.2f}"
 
-    # ✅ 2. Title & Handle Logic
     clean_variants = reorder_variants_for_default(clean_variants, main_data.get("asin"))
     raw_amazon_title = main_data.get("title") or "Untitled Product"
     shopify_payload["original_title"] = raw_amazon_title
@@ -46,28 +44,18 @@ async def process_multi_variant(
     final_handle = f"{base_handle}-{len(existing_products) + 1}" if existing_products else base_handle
     shopify_payload["handle"] = final_handle
 
-    # ==========================================
-    # 🔥 3. DB SAVE
-    # ==========================================
+    # DB SAVE
     db_save = SessionLocal()
     parent_asin_upper = main_data["asin"].upper()
     saved_variants_count = 0
 
     try:
-        # --- Parent Product Save ---
         new_product = db_save.query(Product).filter(Product.asin == parent_asin_upper).first()
         
+        # 🔥 FIX: Seedha main_data se stock uthao
         is_add_to_cart_visible = main_data.get("is_add_to_cart_visible", False)
-
-        if is_add_to_cart_visible:
-            parent_available = True
-            parent_stock_qty = 100
-        else:
-            parent_available = False
-            parent_stock_qty = 0
-
-        parent_in_stock = parent_available
-        parent_stock = parent_stock_qty
+        parent_stock = 100 if is_add_to_cart_visible else 0
+        parent_in_stock = is_add_to_cart_visible
         availability_str = "In Stock" if parent_in_stock else "Out of Stock"
 
         if not new_product:
@@ -113,7 +101,7 @@ async def process_multi_variant(
         db_save.refresh(new_product)
         saved_variants_count += 1
 
-        # --- Child Products Save (Loop) ---
+        # Child Products Save
         print(f"🔍 [DB] Ab child variants save kar rahe hain... Total: {len(clean_variants)}", flush=True)
         
         for v in clean_variants:
@@ -126,7 +114,7 @@ async def process_multi_variant(
                 v_final_price = calculate_final_price(v_amazon_price, user_markup, user_markup_type, user_extra, user_tax)
                 v_images = v.get("images") or []
 
-                # 🔥 FIX: Child variations ka stock parent ke stock ke barabar set karo
+                # 🔥 FIX: Har variation ko parent ka stock do
                 v_resolved = parent_stock
                 v_in_stock = parent_in_stock
                 v_avail = availability_str
@@ -165,7 +153,6 @@ async def process_multi_variant(
                 db_save.rollback()
                 print(f"⚠️ Variant {v.get('asin')} DB save failed: {e}", flush=True)
 
-        # Store count update
         store_db = db_save.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
         if store_db:
             store_db.product_count = (store_db.product_count or 0) + saved_variants_count
@@ -176,13 +163,11 @@ async def process_multi_variant(
         db_save.rollback()
         print(f"❌ [DB ERROR] Save Failed: {e}", flush=True)
         traceback.print_exc()
-        return # DB fail hui toh aage mat badho
+        return
     finally:
         db_save.close()
 
-    # ==========================================
-    # 🔥 4. SHOPIFY API CALL
-    # ==========================================
+    # SHOPIFY API CALL
     print(f"🚀 [Shopify] Creating product with {len(clean_variants)} variants...", flush=True)
     
     token_db = SessionLocal()
@@ -209,9 +194,6 @@ async def process_multi_variant(
         print(f"❌ [Shopify] API crashed: {e}", flush=True)
         traceback.print_exc()
 
-    # ==========================================
-    # 🔥 5. UPDATE DB WITH SHOPIFY IDS
-    # ==========================================
     if shopify_id:
         update_db = SessionLocal()
         try:
@@ -236,9 +218,6 @@ async def process_multi_variant(
         finally:
             update_db.close()
 
-        # ==========================================
-        # 🔥 6. PUBLISH & COLLECTIONS
-        # ==========================================
         try:
             await publish_product(shop_domain, token, shopify_id)
             print(f"✅ Product Published", flush=True)
