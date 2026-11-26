@@ -4,16 +4,13 @@ import axios from 'axios';
 import { RefreshCw, Loader2, Power, Activity } from 'lucide-react';
 
 export default function ManualSync({ API_URL, selectedStoreId }) {
-  // Manual Sync States
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Auto Sync States
   const [isEnabled, setIsEnabled] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [updatingToggle, setUpdatingToggle] = useState(false);
 
-  // Fetch Auto-Sync status on load
   useEffect(() => {
     const fetchAutoSyncStatus = async () => {
       if (!selectedStoreId) {
@@ -32,7 +29,6 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
     fetchAutoSyncStatus();
   }, [API_URL, selectedStoreId]);
 
-  // Handle Auto-Sync Toggle
   const handleToggle = async () => {
     if (updatingToggle) return;
     const newState = !isEnabled;
@@ -52,7 +48,7 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
     }
   };
 
-  // Handle Manual Sync
+  // 🔥 YAHAN FIX HUA HAI
   const handleManualSync = async () => {
     if (!selectedStoreId) {
       alert("Store ID not found. Please connect a store.");
@@ -63,7 +59,10 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
     setMessage('');
     
     try {
-      const res = await axios.post(`${API_URL}/manual-sync?store_id=${selectedStoreId}`);
+      // /manual-sync ki jagah /trigger-sync, aur body mein store_id
+      const res = await axios.post(`${API_URL}/trigger-sync`, {
+        store_id: selectedStoreId
+      });
       setMessage(res.data.message || "Sync started successfully!");
     } catch (err) {
       console.error(err);
@@ -81,10 +80,8 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
         <p className="text-sm text-gray-500 mt-1">Manage automated background syncing and trigger manual updates.</p>
       </div>
 
-      {/* ✅ 2 Columns Layout (No Dark Colors) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
         
-        {/* 1. Auto-Sync Toggle Card (White) */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col justify-between h-full">
           <div>
             <div className="flex justify-between items-start mb-4">
@@ -125,7 +122,6 @@ export default function ManualSync({ API_URL, selectedStoreId }) {
           </div>
         </div>
 
-        {/* 2. Manual Sync Card (White Theme) */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col justify-between h-full text-center">
           <div>
             <div className="mx-auto bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mb-4 border border-gray-100">
