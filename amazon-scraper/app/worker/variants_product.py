@@ -47,7 +47,7 @@ async def process_multi_variant(
     shopify_payload["handle"] = final_handle
 
     # ==========================================
-    # 🔥 3. DB SAVE (PEHLE SAVE KARO, SHOPIFY SE PEHLE)
+    # 🔥 3. DB SAVE
     # ==========================================
     db_save = SessionLocal()
     parent_asin_upper = main_data["asin"].upper()
@@ -57,7 +57,6 @@ async def process_multi_variant(
         # --- Parent Product Save ---
         new_product = db_save.query(Product).filter(Product.asin == parent_asin_upper).first()
         
-        # 🔥 NAYA LOGIC: Add to Cart button check
         is_add_to_cart_visible = main_data.get("is_add_to_cart_visible", False)
 
         if is_add_to_cart_visible:
@@ -115,6 +114,8 @@ async def process_multi_variant(
         saved_variants_count += 1
 
         # --- Child Products Save (Loop) ---
+        print(f"🔍 [DB] Ab child variants save kar rahe hain... Total: {len(clean_variants)}", flush=True)
+        
         for v in clean_variants:
             try:
                 v_asin_upper = v.get("asin", "").upper()
@@ -126,11 +127,10 @@ async def process_multi_variant(
                 v_images = v.get("images") or []
 
                 # 🔥 FIX: Child variations ka stock parent ke stock ke barabar set karo
-                # Agar future mein har variation ka alag stock chahiye, toh yahan v.get("stock_qty") use karna
                 v_resolved = parent_stock
                 v_in_stock = parent_in_stock
-
                 v_avail = availability_str
+                
                 v_title = f"{main_data.get('title', '')} - {v.get('title', '')}" if v.get('title') else main_data.get("title", "")
 
                 child_existing = db_save.query(Product).filter(Product.asin == v_asin_upper).first()
@@ -147,6 +147,7 @@ async def process_multi_variant(
                         shopify_store_id=store.id, shopify_status="pending", shopify_handle=final_handle,
                     )
                     db_save.add(child_product)
+                    print(f"✅ [DB] Child Variant {v_asin_upper} saved with Stock: {v_resolved} | Avail: {v_in_stock}", flush=True)
                 else:
                     child_existing.shopify_store_id = store.id
                     child_existing.shopify_status = "pending"
@@ -155,6 +156,7 @@ async def process_multi_variant(
                     child_existing.stock_quantity = int(v_resolved)
                     child_existing.is_available = v_in_stock
                     child_existing.availability = v_avail
+                    print(f"✅ [DB] Child Variant {v_asin_upper} updated with Stock: {v_resolved} | Avail: {v_in_stock}", flush=True)
                 
                 db_save.commit()
                 saved_variants_count += 1
@@ -179,11 +181,10 @@ async def process_multi_variant(
         db_save.close()
 
     # ==========================================
-    # 🔥 4. SHOPIFY API CALL (Ab DB save ho chuka hai)
+    # 🔥 4. SHOPIFY API CALL
     # ==========================================
     print(f"🚀 [Shopify] Creating product with {len(clean_variants)} variants...", flush=True)
     
-    # Fresh DB session for token (taaki koi connection idle na rahe)
     token_db = SessionLocal()
     try:
         store_token = token_db.query(ShopifyStore).filter(ShopifyStore.id == store.id).first()
@@ -219,7 +220,6 @@ async def process_multi_variant(
                 parent_db.shopify_product_id = shopify_id
                 parent_db.shopify_status = "active"
             
-            # Update child variants
             for v in clean_variants:
                 v_asin = v.get("asin", "").upper()
                 if v_asin and v_asin != parent_asin_upper:
@@ -237,7 +237,7 @@ async def process_multi_variant(
             update_db.close()
 
         # ==========================================
-        # 🔥 6. PUBLISH & COLLECTIONS (Sirf agar Shopify ID mili)
+        # 🔥 6. PUBLISH & COLLECTIONS
         # ==========================================
         try:
             await publish_product(shop_domain, token, shopify_id)
