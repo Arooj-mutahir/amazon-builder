@@ -35,13 +35,14 @@ export default function Settings({ onBack, storeId }) {
     localStorage.setItem('global_compare_markup', finalComparePrice.toString());
 
     try {
+      // 🔥 ASLI FIX: Backend ko 'default_' prefix ke sath bhejo
       await axios.post(`${API_URL}/app/save-settings`, {
         store_id: storeId,
-        markup: parseFloat(markup || 0),
-        markup_type: markupType,
-        extra_percent: finalExtraPercent,           // 🔥 Fix
-        tax_rate: finalTaxRate,                     // 🔥 Fix
-        compare_price_markup: finalComparePrice,    // 🔥 Fix
+        default_markup: parseFloat(markup || 0),                    
+        default_markup_type: markupType,                            
+        default_extra_percent: finalExtraPercent,                   
+        default_tax_rate: finalTaxRate,                             
+        default_compare_price_markup: finalComparePrice,            
         default_stock_qty: 100, 
         shopify_location_id: null
       });
