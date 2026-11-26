@@ -112,7 +112,8 @@ async def _background_fetch_and_push(
     final_tags = list(set(final_tags))
 
     parent_available = _get_availability(main_data)
-    parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_qty"), default_stock_qty)
+    # 🔥 FIX: stock_qty ki jagah stock_quantity use karo
+    parent_stock_qty = _resolve_stock(parent_available, main_data.get("stock_quantity"), default_stock_qty)
     parent_in_stock = bool(parent_available) if parent_stock_qty is not None else False
     parent_stock = parent_stock_qty or 0
 
@@ -132,7 +133,8 @@ async def _background_fetch_and_push(
         "details":      main_data.get("details") or {},
         "is_available": parent_in_stock,
         "in_stock":     parent_in_stock,
-        "stock_qty":    parent_stock,
+        # 🔥 FIX: stock_qty ki jagah stock_quantity use karo
+        "stock_quantity": parent_stock,
     }
     
     clean_variants = _build_clean_variants(main_data, [])
