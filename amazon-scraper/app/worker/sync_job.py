@@ -47,7 +47,6 @@ async def _get_product_actual_location(store, token, inventory_item_id, fallback
 
 
 def _is_store_sync_eligible(store, db) -> bool:
-    """Check if store is eligible for sync."""
     if not store:
         return False
 
@@ -94,39 +93,48 @@ async def sync_prices_job(store_id: int = None):
 
     from app.api.routes.shopify.helpers import calculate_final_price, _get_valid_access_token
 
-    # 🔥 Get product list first (separate short session)
+    # 🔥 Step 1: Get all product IDs (short session)
     db_initial = SessionLocal()
     try:
         query = db_initial.query(Product).filter(Product.shopify_product_id.isnot(None))
         if store_id:
             query = query.filter(Product.shopify_store_id == store_id)
             print(f"🎯 Filtering products for Store ID: {store_id}", flush=True)
-
+        
         products = query.all()
         print(f"🔍 Found {len(products)} products with Shopify IDs to check.\n", flush=True)
     finally:
         db_initial.close()
 
+    if not products:
+        print("⚠️ No products found for sync.", flush=True)
+        return
+
     _eligible_cache = {}
 
-    for product in products:
-        # 🔥 Har product ke liye naya session (scraping ke liye)
+    # 🔥 Step 2: Loop through each product (one-time)
+    for idx, product in enumerate(products, 1):
+        print(f"\n[{idx}/{len(products)}] Processing ASIN: {product.asin}", flush=True)
+
+        # 🔥 Step 3: Fetch store info (fresh session, then close)
         db_scrape = SessionLocal()
         try:
             store = db_scrape.query(ShopifyStore).filter(ShopifyStore.id == product.shopify_store_id).first()
             if not store:
+                print(f"   ⚠️ Store not found for {product.asin}", flush=True)
                 continue
 
             if store.id not in _eligible_cache:
                 _eligible_cache[store.id] = _is_store_sync_eligible(store, db_scrape)
 
             if not _eligible_cache[store.id]:
-                print(f"⏭️  Skipping {product.asin} — store not eligible", flush=True)
+                print(f"   ⏭️ Skipping {product.asin} — store not eligible", flush=True)
                 continue
 
             print(f"=======================================================", flush=True)
             print(f"🔎 Checking ASIN: {product.asin} (Shopify ID: {product.shopify_product_id})", flush=True)
 
+            # Fetch store settings
             store_markup = float(store.default_markup if store.default_markup is not None else 0.0)
             store_markup_type = str(store.default_markup_type or "fixed").lower()
             store_extra = float(store.default_extra_percent if store.default_extra_percent is not None else 0.0)
@@ -135,7 +143,7 @@ async def sync_prices_job(store_id: int = None):
             store_compare_markup = float(getattr(store, "default_compare_price_markup", 0.0) or 0.0)
 
             markup_display = f"${store_markup:.2f}" if store_markup_type == "fixed" else f"{store_markup}%"
-            print(f"   ⚙️  UI Settings: Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}% | Compare={store_compare_markup}%", flush=True)
+            print(f"   ⚙️ UI Settings: Type={store_markup_type.upper()} | Markup={markup_display} | Extra={store_extra}% | Tax={store_tax}% | Compare={store_compare_markup}%", flush=True)
 
             child_products = []
             if not product.is_variation:
@@ -149,24 +157,16 @@ async def sync_prices_job(store_id: int = None):
 
             asin_to_scrape = product.parent_asin if product.is_variation and product.parent_asin else product.asin
 
-            # 🔥 Store info save karo, phir session close karo scraping se pehle
+            # Save store info
             store_domain = store.shop_domain
             store_id_db = store.id
             shopify_location_id = store.shopify_location_id
 
-            # 🔥 IMPORTANT: Scraping se pehle session close karo
+        finally:
             db_scrape.close()
 
-        except Exception as e:
-            print(f"❌ Error preparing {product.asin}: {e}", flush=True)
-            traceback.print_exc()
-            try:
-                db_scrape.close()
-            except:
-                pass
-            continue
-
-        # 🔥 Ab scraping karo (bina kisi DB session ke)
+        # 🔥 Step 4: Scrape Amazon (no DB session open)
+        print(f"   🌐 Scraping Amazon...", flush=True)
         scrape_timeout = max(60.0, float(len(child_products) * 3.5 + 30.0))
         try:
             latest_data = await asyncio.wait_for(
@@ -180,7 +180,7 @@ async def sync_prices_job(store_id: int = None):
             print(f"   ⚠️ Scrape failed: {e}", flush=True)
             continue
 
-        # 🔥 Ab NAYA session banao update ke liye
+        # 🔥 Step 5: Update DB (fresh session)
         db_update = SessionLocal()
         try:
             latest_amazon_price = float(latest_data.get("price") or 0.0)
@@ -235,20 +235,18 @@ async def sync_prices_job(store_id: int = None):
                 v_type_label = "Parent" if not prod_fresh.is_variation else "Child"
                 print(f"      👉 ASIN {prod_fresh.asin} ({v_type_label}): Amazon=${v_amazon_price or 0.0:.2f} -> UI Final=${prod_fresh.price or 0.0:.2f} | Stock={prod_fresh.stock_quantity} ({prod_fresh.availability})", flush=True)
 
-            # 🔥 Commit karo
+            # 🔥 Commit per product
             try:
                 db_update.commit()
                 print(f"   💾 Database updated successfully.", flush=True)
             except Exception as commit_err:
                 db_update.rollback()
                 print(f"   ⚠️ DB Update Failed: {commit_err}", flush=True)
-                db_update.close()
                 continue
 
-            # Shopify Update
+            # 🔥 Step 6: Update Shopify
             store_fresh = db_update.query(ShopifyStore).filter(ShopifyStore.id == store_id_db).first()
             if not store_fresh:
-                db_update.close()
                 continue
 
             token = await _get_valid_access_token(store_fresh, db_update)
@@ -269,28 +267,6 @@ async def sync_prices_job(store_id: int = None):
                 """
                 inv_result = await shopify_graphql(store_fresh.shop_domain, token, inv_query, {"id": shopify_product_id})
                 product_node = inv_result.get("data", {}).get("product")
-
-                if not product_node:
-                    print(f"   ⚠️ Product not found by ID. Searching by SKU...", flush=True)
-                    search_query = """
-                    query findProductBySku($query: String!) {
-                      products(first: 1, query: $query) {
-                        nodes { id title variants(first: 100) { nodes { id sku price inventoryItem { id } } } }
-                      }
-                    }
-                    """
-                    search_res = await shopify_graphql(store_fresh.shop_domain, token, search_query, {"query": f"sku:{product.asin}"})
-                    nodes_found = search_res.get("data", {}).get("products", {}).get("nodes", [])
-                    if nodes_found:
-                        product_node = nodes_found[0]
-                        shopify_product_id = product_node["id"]
-                        product_fresh = db_update.query(Product).filter(Product.id == product.id).first()
-                        if product_fresh:
-                            product_fresh.shopify_product_id = shopify_product_id
-                            try:
-                                db_update.commit()
-                            except:
-                                db_update.rollback()
 
                 if product_node:
                     for node in product_node.get("variants", {}).get("nodes", []):
@@ -375,4 +351,5 @@ async def sync_prices_job(store_id: int = None):
             except:
                 pass
 
-    print("\n✅ [CRON JOB] Sync Complete.\n", flush=True)
+    # 🔥 Step 7: Loop complete — one-time sync done
+    print(f"\n✅ [SYNC COMPLETE] All {len(products)} products processed.\n", flush=True)
